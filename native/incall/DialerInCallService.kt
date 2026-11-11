@@ -1,5 +1,6 @@
 package com.rootaccess.dialer
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,7 +9,6 @@ import android.os.Build
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
-import androidx.core.app.NotificationCompat
 
 class DialerInCallService : InCallService() {
     companion object {
@@ -67,12 +67,16 @@ class DialerInCallService : InCallService() {
         val pi = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        val n = builder
             .setSmallIcon(android.R.drawable.sym_action_call)
-            .setContentTitle(CallManager.snapshot().displayName) // name only, never the number for private contact
+            .setContentTitle(CallManager.snapshot().displayName)
             .setContentText("Incoming call")
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
             .setContentIntent(pi)
             .setFullScreenIntent(pi, true)
