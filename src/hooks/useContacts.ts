@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PermissionsAndroid, Platform } from 'react-native';
 import type { Contact } from '../types';
 import { Dialer } from '../services/dialer';
 
@@ -12,6 +13,24 @@ export function useContacts() {
     setLoading(true);
     setError(null);
     try {
+      if (Platform.OS === 'android') {
+        const has = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_CONTACTS);
+        if (!has) {
+          const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_CONTACTS, {
+            title: 'Contacts Permission',
+            message: 'RootAccess Dialer needs contacts permission to show and search your contacts.',
+            buttonPositive: 'Allow',
+          });
+          if (res !== PermissionsAndroid.RESULTS.GRANTED) {
+            if (mountedRef.current) {
+              setError('Contacts permission denied. Tap to allow in Settings.');
+              setLoading(false);
+            }
+            return;
+          }
+        }
+      }
+
       const list = await Dialer.getContacts();
       if (mountedRef.current) {
         // Sort alphabetically by name
@@ -20,8 +39,8 @@ export function useContacts() {
         );
         setContacts(sorted);
       }
-    } catch {
-      if (mountedRef.current) setError('Could not load contacts');
+    } catch (err: unknown) {
+      if (mountedRef.current) setError((err as Error)?.message ?? 'Could not load contacts');
     } finally {
       if (mountedRef.current) setLoading(false);
     }
