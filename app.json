@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "RootAccess Dialer",
+    "slug": "rootaccess-dialer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#050507",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050507"
+    },
+    "newArchEnabled": false,
+    "android": {
+      "package": "com.rootaccess.dialer",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#050507"
+      },
+      "permissions": [
+        "android.permission.CALL_PHONE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_CALL_LOG",
+        "android.permission.ANSWER_PHONE_CALLS",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-font",
+      "./plugins/withDialer",
+      "expo-asset"
+    ]
+  }
+}
