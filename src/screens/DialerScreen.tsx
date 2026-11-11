@@ -8,32 +8,39 @@ import { Dialer } from '../services/dialer';
 import { colors, fonts } from '../theme';
 
 export function DialerScreen() {
-  const [digits, setDigits] = useState('');
-  const [identity, setIdentity] = useState<string | null>(null);
+  const [digits,    setDigits]    = useState('');
+  const [identity,  setIdentity]  = useState<string | null>(null);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [isDefault, setIsDefault] = useState(true);
 
-  const press = useCallback((d: string) => setDigits((p) => (p.length < 20 ? p + d : p)), []);
-  const backspace = useCallback(() => setDigits((p) => p.slice(0, -1)), []);
-  const clear = useCallback(() => setDigits(''), []);
+  const press     = useCallback((d: string) => setDigits((p) => (p.length < 20 ? p + d : p)), []);
+  const backspace  = useCallback(() => setDigits((p) => p.slice(0, -1)), []);
+  const clear      = useCallback(() => setDigits(''), []);
 
-  // Native resolves whether the typed digits belong to the private contact.
-  // JS only ever receives the display name, never the stored number.
+  // Resolve typed digits to a contact name (or private contact display name).
+  // The private number is NEVER returned to JS — only the display name or null.
   useEffect(() => {
     let live = true;
-    if (!digits) { setIdentity(null); return; }
-    Dialer.resolveInput(digits).then((n) => { if (live) setIdentity(n); }).catch(() => { });
+    if (!digits) { setIdentity(null); setIsPrivate(false); return; }
+    Dialer.resolveInput(digits)
+      .then((n) => {
+        if (!live) return;
+        if (n) { setIdentity(n); setIsPrivate(true); }
+        else   { setIdentity(null); setIsPrivate(false); }
+      })
+      .catch(() => {});
     return () => { live = false; };
   }, [digits]);
 
   useEffect(() => {
-    const check = () => Dialer.isDefaultDialer().then(setIsDefault).catch(() => { });
+    const check = () => Dialer.isDefaultDialer().then(setIsDefault).catch(() => {});
     check();
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') check(); });
     return () => sub.remove();
   }, []);
 
-  const fail = useCallback((e: unknown) => Alert.alert('Call failed', (e as Error)?.message ?? 'Unable to place call'), []);
-  const call = useCallback(() => {
+  const fail       = useCallback((e: unknown) => Alert.alert('Call failed', (e as Error)?.message ?? 'Unable to place call'), []);
+  const call       = useCallback(() => {
     if (!digits) return;
     Dialer.dial(digits).then(() => setDigits('')).catch(fail);
   }, [digits, fail]);
@@ -52,7 +59,7 @@ export function DialerScreen() {
         {identity ? (
           <>
             <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{identity}</Text>
-            <Text style={styles.hint}>Private contact</Text>
+            {isPrivate && <Text style={styles.hint}>Private contact</Text>}
           </>
         ) : (
           <Text style={styles.digits} numberOfLines={1} adjustsFontSizeToFit>{digits}</Text>
@@ -73,13 +80,13 @@ export function DialerScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 8 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 12, alignSelf: 'stretch' },
+  root:       { flex: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 8 },
+  banner:     { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 12, alignSelf: 'stretch' },
   bannerText: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 12 },
-  display: { height: 96, width: '100%', alignItems: 'center', justifyContent: 'center' },
-  digits: { color: colors.text, fontFamily: fonts.medium, fontSize: 40, letterSpacing: 1 },
-  identity: { color: colors.text, fontFamily: fonts.semibold, fontSize: 26 },
-  hint: { color: colors.accent, fontFamily: fonts.medium, fontSize: 12, marginTop: 4, letterSpacing: 1 },
-  bottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 20 },
-  side: { width: 78, height: 72, alignItems: 'center', justifyContent: 'center' },
+  display:    { height: 96, width: '100%', alignItems: 'center', justifyContent: 'center' },
+  digits:     { color: colors.text, fontFamily: fonts.medium, fontSize: 40, letterSpacing: 1 },
+  identity:   { color: colors.text, fontFamily: fonts.semibold, fontSize: 26 },
+  hint:       { color: colors.accent, fontFamily: fonts.medium, fontSize: 12, marginTop: 4, letterSpacing: 1 },
+  bottom:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 20 },
+  side:       { width: 78, height: 72, alignItems: 'center', justifyContent: 'center' },
 });

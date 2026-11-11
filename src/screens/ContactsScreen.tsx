@@ -161,7 +161,9 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
   const scale = useSharedValue(1);
 
   const dial = useCallback(() => {
-    Dialer.dial(item.number).catch((e: unknown) =>
+    // Private contact has empty number — route through callPrivate() so the number is never in JS
+    const p = item.number ? Dialer.dial(item.number) : Dialer.callPrivate();
+    p.catch((e: unknown) =>
       Alert.alert('Call failed', (e as Error)?.message ?? 'Unable to place call')
     );
   }, [item.number]);
@@ -183,8 +185,10 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
         <Avatar size={46} photoUri={item.photoUri} name={item.name} />
         <View style={styles.rowText}>
           <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-          {/* Show number only as secondary info, never as primary */}
-          <Text style={styles.rowSub} numberOfLines={1}>Mobile</Text>
+          {/* Show number for normal contacts; hide for private (number is '') */}
+          <Text style={styles.rowSub} numberOfLines={1}>
+            {item.number ? item.number : 'Private'}
+          </Text>
         </View>
         {/* Quick-call button */}
         <Pressable
@@ -195,9 +199,14 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
         >
           <Ionicons name="call" size={19} color={colors.green} />
         </Pressable>
-        {/* More options */}
+        {/* More options — hide delete for private pinned contact */}
         <Pressable
           onPress={() => {
+            if (!item.number) {
+              // Private contact — no edit/delete
+              Alert.alert(item.name, 'This is a private contact.', [{ text: 'OK' }]);
+              return;
+            }
             Alert.alert(item.name, item.number, [
               { text: 'Edit',   onPress: () => onEdit(item) },
               { text: 'Delete', onPress: () => onDelete(item), style: 'destructive' },

@@ -171,7 +171,10 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }.start()
     }
 
-    /** Returns all phone contacts, sorted A–Z. Skips private contact. */
+    /** Returns all phone contacts, sorted A–Z.
+     *  The private contact (RootAccess) is injected at top with an empty number so
+     *  the UI shows the name + call button but the number is never exposed anywhere.
+     */
     @ReactMethod
     fun getContacts(promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
@@ -180,6 +183,15 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         Thread {
             try {
                 val out  = Arguments.createArray()
+
+                // ── Inject private contact at the very top (number hidden, id = "private") ──
+                val privateEntry = Arguments.createMap()
+                privateEntry.putString("id",   "private")
+                privateEntry.putString("name", PrivateIdentity.DISPLAY_NAME)
+                privateEntry.putString("number", "")   // number NEVER sent to JS
+                privateEntry.putNull("photoUri")
+                out.pushMap(privateEntry)
+
                 val proj = arrayOf(
                     ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
                     ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -200,6 +212,7 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                         val id     = c.getLong(idIdx).toString()
                         val name   = c.getString(nameIdx)?.takeIf { it.isNotBlank() } ?: continue
                         val number = c.getString(numIdx)?.takeIf  { it.isNotBlank() } ?: continue
+                        // Skip private contact (never list it again from device contacts)
                         if (PrivateIdentity.isPrivate(number)) continue
                         val key = "$id|${number.replace("\\s".toRegex(), "")}"
                         if (!seen.add(key)) continue
