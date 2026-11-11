@@ -21,6 +21,7 @@
         "backgroundColor": "#050507"
       },
       "permissions": [
+        "android.permission.INTERNET",
         "android.permission.CALL_PHONE",
         "android.permission.READ_PHONE_STATE",
         "android.permission.READ_CALL_LOG",
@@ -32,7 +33,6 @@
         "android.permission.VIBRATE"
       ],
       "blockedPermissions": [
-        "android.permission.INTERNET",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
@@ -42,6 +42,12 @@
       "expo-font",
       "./plugins/withDialer",
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7935d4ce-d66d-4fc3-b543-ce0f5ccd3d41"
+      }
+    },
+    "owner": "vibecodersarjan"
   }
 }

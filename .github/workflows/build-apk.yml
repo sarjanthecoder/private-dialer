@@ -49,12 +49,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
+      # ── 8. Build standalone release APK (JS bundled offline, no Metro needed) ──
+      - name: Build Standalone Release APK
         id: gradle_build
         working-directory: android
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --console=plain 2>&1 | tee ../gradle-build.log
+          ./gradlew assembleRelease --no-daemon --console=plain 2>&1 | tee ../gradle-build.log
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=512m"
 
@@ -79,8 +80,14 @@ jobs:
         run: |
           BRANCH="${{ github.ref_name }}"
           DATE=$(date +%Y%m%d-%H%M)
-          APK_NAME="RootAccessDialer-${BRANCH}-${DATE}.apk"
-          mv android/app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
+          APK_NAME="RootAccessDialer-${BRANCH}-RELEASE-${DATE}.apk"
+          FOUND_APK=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$FOUND_APK" ]; then
+            echo "Error: No APK found in android/app/build/outputs/apk"
+            exit 1
+          fi
+          echo "Found APK at: $FOUND_APK"
+          mv "$FOUND_APK" "$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
 
       - name: Upload APK artifact
@@ -94,9 +101,11 @@ jobs:
       - name: Build summary
         if: success()
         run: |
-          echo "### ✅ APK Built Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Release APK Built Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**File:** \`${{ env.APK_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** Standalone Offline Release APK (no dev server needed)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Download:** Go to Actions tab → this run → Artifacts section at the bottom" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
