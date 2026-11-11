@@ -5,12 +5,12 @@ import {
   Platform,
 } from 'react-native';
 import type { NativeModule, Permission } from 'react-native';
-import type { CallInfo, CallLogEntry, Contact, NewContact } from '../types';
+import type { CallInfo, CallLogEntry, Contact, NewContact, SimInfo } from '../types';
 
 export interface DialerNative {
   getCurrentCall(): Promise<CallInfo>;
   callPrivate(): Promise<boolean>;
-  dial(digits: string): Promise<boolean>;
+  dial(digits: string, simId?: string): Promise<boolean>;
   resolveInput(digits: string): Promise<string | null>;
   answer(): void;
   reject(): void;
@@ -25,6 +25,7 @@ export interface DialerNative {
   getContacts(): Promise<Contact[]>;
   addContact(contact: NewContact): Promise<string>;
   deleteContact(id: string): Promise<boolean>;
+  getSims(): Promise<SimInfo[]>;
   hold(): void;
   unhold(): void;
   merge(): void;
@@ -41,6 +42,8 @@ const IDLE_CALL: CallInfo = {
   photoUri: null,
   heldCallName: null,
   canMerge: false,
+  simSlot: null,
+  simLabel: null,
 };
 
 const DialerStub: DialerNative = {
@@ -61,29 +64,22 @@ const DialerStub: DialerNative = {
   getContacts:          () => Promise.resolve([]),
   addContact:           () => Promise.reject(new Error('Native module not linked')),
   deleteContact:        () => Promise.resolve(false),
+  getSims:              () => Promise.resolve([]),
   hold:                 () => undefined,
   unhold:               () => undefined,
   merge:                () => undefined,
 };
 
 const nativeMod = NativeModules.Dialer as (DialerNative & NativeModule) | undefined;
-
 export const Dialer: DialerNative = nativeMod ?? DialerStub;
 
 export interface CallEventEmitter {
-  addListener(
-    eventType: 'onCallState',
-    listener: (info: CallInfo) => void,
-  ): { remove(): void };
+  addListener(eventType: 'onCallState', listener: (info: CallInfo) => void): { remove(): void };
 }
 
-// Only construct NativeEventEmitter when the native module actually exists,
-// avoiding RN warnings/crashes in Expo Go or web previews.
 export const callEvents: CallEventEmitter = nativeMod
   ? new NativeEventEmitter(nativeMod)
-  : {
-      addListener: () => ({ remove: () => undefined }),
-    };
+  : { addListener: () => ({ remove: () => undefined }) };
 
 export async function requestRuntimePermissions(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;

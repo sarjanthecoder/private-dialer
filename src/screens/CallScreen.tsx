@@ -3,15 +3,10 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  Easing,
-  FadeIn,
-  FadeOut,
-  cancelAnimation,
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
+  Easing, FadeIn, FadeOut,
+  cancelAnimation, interpolate,
+  useAnimatedStyle, useSharedValue,
+  withRepeat, withTiming,
 } from 'react-native-reanimated';
 import { Avatar } from '../components/Avatar';
 import { Keypad } from '../components/Keypad';
@@ -21,9 +16,9 @@ import { colors, fonts } from '../theme';
 import type { CallInfo } from '../types';
 import { formatDuration } from '../utils/format';
 
-// ── Pulse ring (animates while ringing / dialing) ──────────────────────────────
+// ── Pulse ring ────────────────────────────────────────────────────────────────
 const Pulse = memo(function Pulse({ running }: { running: boolean }) {
-  const scale   = useSharedValue(1);
+  const scale     = useSharedValue(1);
   const isRunning = useSharedValue(running ? 1 : 0);
 
   useEffect(() => {
@@ -31,8 +26,7 @@ const Pulse = memo(function Pulse({ running }: { running: boolean }) {
     if (running) {
       scale.value = withRepeat(
         withTiming(1.4, { duration: 1400, easing: Easing.out(Easing.quad) }),
-        -1,
-        false,
+        -1, false,
       );
     } else {
       cancelAnimation(scale);
@@ -49,7 +43,7 @@ const Pulse = memo(function Pulse({ running }: { running: boolean }) {
   return <Animated.View pointerEvents="none" style={[styles.ring, style]} />;
 });
 
-// ── Call timer (counts up from connect time) ────────────────────────────────────
+// ── Call timer ────────────────────────────────────────────────────────────────
 const CallTimer = memo(function CallTimer({ since }: { since: number }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -60,7 +54,7 @@ const CallTimer = memo(function CallTimer({ since }: { since: number }) {
   return <Text style={styles.status}>{formatDuration(secs)}</Text>;
 });
 
-// ── Animated dots (Calling...) ──────────────────────────────────────────────────
+// ── Animated dots ─────────────────────────────────────────────────────────────
 const Dots = memo(function Dots({ base }: { base: string }) {
   const [n, setN] = useState(0);
   useEffect(() => {
@@ -70,16 +64,26 @@ const Dots = memo(function Dots({ base }: { base: string }) {
   return <Text style={styles.status}>{base}{'.'.repeat(n)}</Text>;
 });
 
-// ── Main CallScreen ─────────────────────────────────────────────────────────────
+// ── SIM badge ────────────────────────────────────────────────────────────────
+const SimBadge = memo(function SimBadge({ slot, label }: { slot: number; label: string }) {
+  const bg = slot === 1 ? colors.accent : colors.green;
+  return (
+    <View style={[styles.simBadge, { backgroundColor: bg }]}>
+      <Text style={styles.simBadgeText}>{label || `SIM ${slot}`}</Text>
+    </View>
+  );
+});
+
+// ── Main CallScreen ───────────────────────────────────────────────────────────
 export function CallScreen({ call }: { call: CallInfo }) {
   const [showPad, setShowPad] = useState(false);
   const [typed,   setTyped]   = useState('');
   const [onHold,  setOnHold]  = useState(false);
 
   useEffect(() => {
-    if (call.state === 'idle') { setShowPad(false); setTyped(''); setOnHold(false); }
-    if (call.state === 'holding') setOnHold(true);
-    if (call.state === 'active') setOnHold(false);
+    if (call.state === 'idle')     { setShowPad(false); setTyped(''); setOnHold(false); }
+    if (call.state === 'holding')  setOnHold(true);
+    if (call.state === 'active')   setOnHold(false);
   }, [call.state]);
 
   const answer        = useCallback(() => Dialer.answer(), []);
@@ -92,40 +96,42 @@ export function CallScreen({ call }: { call: CallInfo }) {
     if (onHold) { Dialer.unhold(); setOnHold(false); }
     else        { Dialer.hold();   setOnHold(true);  }
   }, [onHold]);
-  const merge         = useCallback(() => Dialer.merge(), []);
-  const dtmf          = useCallback((d: string) => {
+  const merge = useCallback(() => Dialer.merge(), []);
+  const dtmf  = useCallback((d: string) => {
     Dialer.sendDtmf(d);
     setTyped((t) => (t + d).slice(-18));
   }, []);
 
-  const ringing = call.state === 'ringing';
-  const pulsing = ringing || call.state === 'dialing';
+  const ringing  = call.state === 'ringing';
+  const pulsing  = ringing || call.state === 'dialing';
   const isActive = call.state === 'active' || call.state === 'holding';
 
   let status: React.ReactNode;
-  if (ringing)                        status = <Text style={styles.status}>Incoming call</Text>;
-  else if (call.state === 'dialing')  status = <Dots base="Calling" />;
-  else if (call.state === 'active')   status = <CallTimer since={call.connectTime} />;
-  else if (call.state === 'holding')  status = <Text style={styles.status}>On hold</Text>;
-  else                                status = <Text style={styles.status}>Call ended</Text>;
-
-  // Show held call info if available
-  const heldName = call.heldCallName;
+  if (ringing)                       status = <Text style={styles.status}>Incoming call</Text>;
+  else if (call.state === 'dialing') status = <Dots base="Calling" />;
+  else if (call.state === 'active')  status = <CallTimer since={call.connectTime} />;
+  else if (call.state === 'holding') status = <Text style={styles.status}>On hold</Text>;
+  else                               status = <Text style={styles.status}>Call ended</Text>;
 
   return (
     <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(180)} style={styles.overlay}>
       <LinearGradient colors={['#0B1530', '#050507', '#050507']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safe}>
         <View style={styles.top}>
+          {/* SIM badge — shows which SIM this call is on */}
+          {call.simSlot !== null && (
+            <SimBadge slot={call.simSlot} label={call.simLabel ?? `SIM ${call.simSlot}`} />
+          )}
+
           <View style={styles.avatarWrap}>
             <Pulse running={pulsing} />
             <Avatar size={120} photoUri={call.photoUri} name={call.isPrivate ? undefined : call.displayName} />
           </View>
           <Text style={styles.name} numberOfLines={2}>{call.displayName}</Text>
           {status}
-          {heldName && (
-            <Text style={styles.heldLabel}>On hold: {heldName}</Text>
-          )}
+          {call.heldCallName ? (
+            <Text style={styles.heldLabel}>On hold: {call.heldCallName}</Text>
+          ) : null}
         </View>
 
         {showPad && !ringing ? (
@@ -144,53 +150,30 @@ export function CallScreen({ call }: { call: CallInfo }) {
           <View style={styles.controls}>
             {/* Row 1: Mute, Keypad, Speaker */}
             <View style={styles.rowBetween}>
-              <RoundAction
-                icon={call.muted ? 'mic-off' : 'mic'}
-                bg={call.muted ? colors.text : colors.surfaceStrong}
-                iconColor={call.muted ? '#000' : colors.text}
-                label="Mute"
-                onPress={toggleMute}
-              />
-              <RoundAction
-                icon="keypad"
+              <RoundAction icon={call.muted   ? 'mic-off'    : 'mic'}
+                bg={call.muted   ? colors.text : colors.surfaceStrong}
+                iconColor={call.muted   ? '#000' : colors.text} label="Mute"    onPress={toggleMute} />
+              <RoundAction icon="keypad"
                 bg={showPad ? colors.text : colors.surfaceStrong}
-                iconColor={showPad ? '#000' : colors.text}
-                label="Keypad"
-                onPress={togglePad}
-              />
-              <RoundAction
-                icon="volume-high"
+                iconColor={showPad ? '#000' : colors.text}       label="Keypad"  onPress={togglePad} />
+              <RoundAction icon="volume-high"
                 bg={call.speaker ? colors.text : colors.surfaceStrong}
-                iconColor={call.speaker ? '#000' : colors.text}
-                label="Speaker"
-                onPress={toggleSpeaker}
-              />
+                iconColor={call.speaker ? '#000' : colors.text} label="Speaker" onPress={toggleSpeaker} />
             </View>
-            {/* Row 2: Hold, Merge (if available), End */}
+            {/* Row 2: Hold, End, Merge */}
             <View style={styles.rowBetween}>
               {isActive ? (
-                <RoundAction
-                  icon={onHold ? 'play' : 'pause'}
+                <RoundAction icon={onHold ? 'play' : 'pause'}
                   bg={onHold ? colors.accent : colors.surfaceStrong}
                   iconColor={onHold ? '#000' : colors.text}
-                  label={onHold ? 'Resume' : 'Hold'}
-                  onPress={toggleHold}
-                />
-              ) : (
-                <View style={styles.placeholder} />
-              )}
+                  label={onHold ? 'Resume' : 'Hold'} onPress={toggleHold} />
+              ) : <View style={styles.placeholder} />}
+
               <RoundAction icon="call" size={78} bg={colors.red} iconColor="#fff" rotate={135} onPress={hangup} />
+
               {call.canMerge ? (
-                <RoundAction
-                  icon="git-merge"
-                  bg={colors.surfaceStrong}
-                  iconColor={colors.text}
-                  label="Merge"
-                  onPress={merge}
-                />
-              ) : (
-                <View style={styles.placeholder} />
-              )}
+                <RoundAction icon="git-merge" bg={colors.surfaceStrong} iconColor={colors.text} label="Merge" onPress={merge} />
+              ) : <View style={styles.placeholder} />}
             </View>
           </View>
         )}
@@ -200,17 +183,19 @@ export function CallScreen({ call }: { call: CallInfo }) {
 }
 
 const styles = StyleSheet.create({
-  overlay:     { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg, zIndex: 100 },
-  safe:        { flex: 1, justifyContent: 'space-between', paddingHorizontal: 32, paddingBottom: 32 },
-  top:         { alignItems: 'center', paddingTop: 48 },
-  avatarWrap:  { width: 120, height: 120, alignItems: 'center', justifyContent: 'center' },
-  ring:        { position: 'absolute', width: 120, height: 120, borderRadius: 60, borderWidth: 2, borderColor: colors.accent },
-  name:        { color: colors.text, fontFamily: fonts.semibold, fontSize: 28, marginTop: 28, textAlign: 'center' },
-  status:      { color: colors.textDim, fontFamily: fonts.medium, fontSize: 16, marginTop: 10, minHeight: 22 },
-  heldLabel:   { color: colors.accent, fontFamily: fonts.medium, fontSize: 13, marginTop: 6 },
-  padWrap:     { alignItems: 'center', gap: 14 },
-  typed:       { color: colors.text, fontFamily: fonts.medium, fontSize: 24, minHeight: 32 },
-  controls:    { alignItems: 'center', gap: 28 },
-  rowBetween:  { flexDirection: 'row', justifyContent: 'space-around', alignSelf: 'stretch', alignItems: 'center' },
-  placeholder: { width: 64, height: 64 },
+  overlay:      { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg, zIndex: 100 },
+  safe:         { flex: 1, justifyContent: 'space-between', paddingHorizontal: 32, paddingBottom: 32 },
+  top:          { alignItems: 'center', paddingTop: 36 },
+  avatarWrap:   { width: 120, height: 120, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  ring:         { position: 'absolute', width: 120, height: 120, borderRadius: 60, borderWidth: 2, borderColor: colors.accent },
+  name:         { color: colors.text, fontFamily: fonts.semibold, fontSize: 28, marginTop: 22, textAlign: 'center' },
+  status:       { color: colors.textDim, fontFamily: fonts.medium, fontSize: 16, marginTop: 10, minHeight: 22 },
+  heldLabel:    { color: colors.accent, fontFamily: fonts.medium, fontSize: 13, marginTop: 6 },
+  simBadge:     { paddingHorizontal: 14, paddingVertical: 4, borderRadius: 20, marginBottom: 4 },
+  simBadgeText: { color: '#fff', fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 0.5 },
+  padWrap:      { alignItems: 'center', gap: 14 },
+  typed:        { color: colors.text, fontFamily: fonts.medium, fontSize: 24, minHeight: 32 },
+  controls:     { alignItems: 'center', gap: 28 },
+  rowBetween:   { flexDirection: 'row', justifyContent: 'space-around', alignSelf: 'stretch', alignItems: 'center' },
+  placeholder:  { width: 64, height: 64 },
 });
