@@ -77,7 +77,7 @@ internal object CallManager {
             service?.contentResolver?.query(
                 uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null
             )?.use { c -> if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null }
-        } catch (_: Exception) { null }
+        } catch (e: Exception) { null }
     }
 
     private fun resolveContactPhoto(number: String?): String? {
@@ -87,7 +87,7 @@ internal object CallManager {
             service?.contentResolver?.query(
                 uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI), null, null, null
             )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-        } catch (_: Exception) { null }
+        } catch (e: Exception) { null }
     }
 
     private fun simInfo(accountHandle: PhoneAccountHandle?): Pair<Int?, String?> {
