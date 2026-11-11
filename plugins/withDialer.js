@@ -61,12 +61,20 @@ module.exports = function withDialer(config) {
     },
   ]);
 
-  // 3. Register the native package
+  // 3. Register the native package safely in Kotlin
   config = withMainApplication(config, (cfg) => {
     let src = cfg.modResults.contents;
     if (!src.includes('DialerPackage()')) {
       if (src.includes('PackageList(this).packages.apply {')) {
-        src = src.replace('PackageList(this).packages.apply {', 'PackageList(this).packages.apply {\n              add(DialerPackage())');
+        src = src.replace(
+          'PackageList(this).packages.apply {',
+          'PackageList(this).packages.apply {\n              add(DialerPackage())'
+        );
+      } else if (src.includes('val packages = PackageList(this).packages')) {
+        src = src.replace(
+          'val packages = PackageList(this).packages',
+          'val packages = PackageList(this).packages.toMutableList()\n            packages.add(DialerPackage())'
+        );
       } else {
         src = src.replace('return packages', 'packages.add(DialerPackage())\n          return packages');
       }
