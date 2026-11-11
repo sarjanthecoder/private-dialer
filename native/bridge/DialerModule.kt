@@ -90,26 +90,54 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     fun getCurrentCall(promise: Promise) = promise.resolve(CallManager.snapshot().toMap())
 
     private fun place(uri: Uri, simId: String?, promise: Promise) {
-        if (ctx.checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            promise.reject("E_PERMISSION", "Phone permission required"); return
-        }
-        try {
-            val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-            val extras = Bundle()
-            // If a specific SIM was requested, find the matching PhoneAccountHandle
-            if (!simId.isNullOrBlank()) {
-                val accounts = tm.callCapablePhoneAccounts
-                val handle = accounts?.firstOrNull { it.id == simId }
-                if (handle != null) {
-                    extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+        val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+
+        // 1. Try TelecomManager.placeCall (succeeds when app is default dialer)
+        if (tm != null) {
+            try {
+                val extras = Bundle()
+                if (!simId.isNullOrBlank()) {
+                    val accounts = tm.callCapablePhoneAccounts
+                    val handle = accounts?.firstOrNull { it.id == simId }
+                    if (handle != null) {
+                        extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+                    }
                 }
+                tm.placeCall(uri, extras)
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                // Not default dialer or TelecomManager failed, fallback to direct intent
             }
-            tm.placeCall(uri, extras)
+        }
+
+        // 2. Direct call via Intent.ACTION_CALL (requires CALL_PHONE permission, works without default dialer)
+        if (ctx.checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    if (!simId.isNullOrBlank()) {
+                        putExtra("com.android.phone.extra.slot", simId.toIntOrNull() ?: 0)
+                        putExtra("android.telecom.extra.PHONE_ACCOUNT_HANDLE", simId)
+                    }
+                }
+                ctx.startActivity(callIntent)
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                // Fall through to ACTION_DIAL
+            }
+        }
+
+        // 3. Fallback to Intent.ACTION_DIAL (always succeeds, opens system dialer if permission not yet granted)
+        try {
+            val dialIntent = Intent(Intent.ACTION_DIAL, uri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            ctx.startActivity(dialIntent)
             promise.resolve(true)
-        } catch (e: SecurityException) {
-            promise.reject("E_PERMISSION", "Phone permission required")
         } catch (e: Exception) {
-            promise.reject("E_CALL", "Unable to place call")
+            promise.reject("E_CALL", "Unable to place call: ${e.message}")
         }
     }
 
@@ -259,6 +287,7 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         if (ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             promise.reject("E_PERMISSION", "Contacts permission required"); return
         }
+        
         Thread {
             try {
                 val out  = Arguments.createArray()
@@ -273,17 +302,17 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                     ContactsContract.CommonDataKinds.Phone.CONTENT_URI, proj, null, null,
                     "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
                 )?.use { c ->
-                    val idIdx    = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
-                    val nameIdx  = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                    val numIdx   = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    val photoIdx = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
+                    val idIdx    = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+                    val nameIdx  = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numIdx   = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    val photoIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
                     while (c.moveToNext()) {
-                        val id     = c.getLong(idIdx).toString()
-                        val name   = c.getString(nameIdx)?.takeIf { it.isNotBlank() } ?: continue
-                        val number = c.getString(numIdx)?.takeIf  { it.isNotBlank() } ?: continue
+                        val id     = if (idIdx >= 0) c.getLong(idIdx).toString() else ""
+                        val name   = (if (nameIdx >= 0) c.getString(nameIdx) else null)?.takeIf { it.isNotBlank() } ?: continue
+                        val number = (if (numIdx >= 0) c.getString(numIdx) else null)?.takeIf { it.isNotBlank() } ?: continue
                         if (PrivateIdentity.isPrivate(number)) continue
                         if (!seen.add("$id|${number.replace("\\s".toRegex(), "")}")) continue
-                        val photoUri = c.getString(photoIdx)
+                        val photoUri = if (photoIdx >= 0) c.getString(photoIdx) else null
                         val map = Arguments.createMap()
                         map.putString("id",   id)
                         map.putString("name", name)

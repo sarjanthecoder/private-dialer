@@ -11,6 +11,7 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -226,9 +227,12 @@ export function ContactsScreen() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return contacts;
-    return contacts.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.number.replace(/\D/g, '').includes(q.replace(/\D/g, ''))
-    );
+    const digitsOnly = q.replace(/\D/g, '');
+    return contacts.filter((c) => {
+      const nameMatch = c.name.toLowerCase().includes(q);
+      const numMatch = digitsOnly.length > 0 && c.number.replace(/\D/g, '').includes(digitsOnly);
+      return nameMatch || numMatch;
+    });
   }, [contacts, query]);
 
   const openNew  = useCallback(() => { setEditTarget(null); setShowForm(true); }, []);
@@ -305,9 +309,14 @@ export function ContactsScreen() {
         <View style={styles.center}>
           <Ionicons name="alert-circle-outline" size={42} color={colors.textDim} />
           <Text style={styles.hint}>{error}</Text>
-          <Pressable onPress={refresh} style={styles.retryBtn}>
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+            <Pressable onPress={refresh} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+            <Pressable onPress={() => Linking.openSettings()} style={[styles.retryBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
+              <Text style={[styles.retryText, { color: colors.text }]}>Settings</Text>
+            </Pressable>
+          </View>
         </View>
       ) : (
         <FlatList

@@ -1,12 +1,13 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, AppState, Modal, Pressable,
+  Alert, AppState, Linking, Modal, Pressable,
   StyleSheet, Text, View,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Keypad } from '../components/Keypad';
 import { RoundAction } from '../components/RoundAction';
+import { useContacts } from '../hooks/useContacts';
 import { Dialer } from '../services/dialer';
 import { colors, fonts } from '../theme';
 import type { SimInfo } from '../types';
@@ -83,10 +84,43 @@ export function DialerScreen() {
     return () => sub.remove();
   }, []);
 
-  const fail = useCallback((e: unknown) =>
-    Alert.alert('Call failed', (e as Error)?.message ?? 'Unable to place call'), []);
+  const { contacts } = useContacts();
 
-  const makeDefault = useCallback(() => { Dialer.requestDefaultDialer().catch(fail); }, [fail]);
+  // Find matching contact when digits are dialed
+  const matchedContact = useMemo(() => {
+    if (!digits || isPrivate) return null;
+    const clean = digits.replace(/\D/g, '');
+    if (clean.length < 2) return null;
+    return contacts.find((c) => c.number.replace(/\D/g, '').includes(clean));
+  }, [digits, isPrivate, contacts]);
+
+  const fail = useCallback((e: unknown) =>
+    Alert.alert('Call info', (e as Error)?.message ?? 'Unable to place call'), []);
+
+  const makeDefault = useCallback(async () => {
+    try {
+      const ok = await Dialer.requestDefaultDialer();
+      if (!ok) {
+        Alert.alert(
+          'Allow Restricted Settings',
+          'On Android 13/14/15, sideloaded apps need one permission:\n\n1. Open Settings -> Apps -> RootAccess Dialer\n2. Tap the 3 dots (⋮) in the top-right corner\n3. Tap "Allow restricted settings"\n4. Come back and tap "Set as default phone app"!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    } catch {
+      Alert.alert(
+        'Allow Restricted Settings',
+        'On Android 13/14/15, sideloaded apps need one permission:\n\n1. Open Settings -> Apps -> RootAccess Dialer\n2. Tap the 3 dots (⋮) in the top-right corner\n3. Tap "Allow restricted settings"\n4. Come back and tap "Set as default phone app"!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  }, []);
 
   const doCall = useCallback((digits: string, simId?: string) => {
     Dialer.dial(digits, simId).then(() => setDigits('')).catch(fail);
@@ -145,6 +179,11 @@ export function DialerScreen() {
             <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{identity}</Text>
             {isPrivate && <Text style={styles.hint}>Private contact</Text>}
           </>
+        ) : matchedContact ? (
+          <>
+            <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{matchedContact.name}</Text>
+            <Text style={styles.digitsSub} numberOfLines={1}>{digits}</Text>
+          </>
         ) : (
           <Text style={styles.digits} numberOfLines={1} adjustsFontSizeToFit>{digits}</Text>
         )}
@@ -179,6 +218,7 @@ const styles = StyleSheet.create({
   simChipText:   { fontFamily: fonts.medium, fontSize: 11 },
   display:       { height: 90, width: '100%', alignItems: 'center', justifyContent: 'center' },
   digits:        { color: colors.text, fontFamily: fonts.medium, fontSize: 40, letterSpacing: 1 },
+  digitsSub:     { color: colors.textDim, fontFamily: fonts.medium, fontSize: 18, marginTop: 4 },
   identity:      { color: colors.text, fontFamily: fonts.semibold, fontSize: 26 },
   hint:          { color: colors.accent, fontFamily: fonts.medium, fontSize: 11, marginTop: 3, letterSpacing: 1 },
   bottom:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 16 },
