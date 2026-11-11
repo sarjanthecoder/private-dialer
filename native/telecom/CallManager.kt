@@ -73,7 +73,7 @@ internal object CallManager {
         if (number.isNullOrBlank()) return null
         if (PrivateIdentity.isPrivate(number)) return PrivateIdentity.DISPLAY_NAME
         return try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_URI, Uri.encode(number))
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
             service?.contentResolver?.query(
                 uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null
             )?.use { c -> if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null }
@@ -83,7 +83,7 @@ internal object CallManager {
     private fun resolveContactPhoto(number: String?): String? {
         if (number.isNullOrBlank() || PrivateIdentity.isPrivate(number)) return null
         return try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_URI, Uri.encode(number))
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
             service?.contentResolver?.query(
                 uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI), null, null, null
             )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
