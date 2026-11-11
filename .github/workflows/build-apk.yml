@@ -50,20 +50,32 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
+        id: gradle_build
         working-directory: android
         run: |
-          ./gradlew assembleDebug --no-daemon --console=plain 2>&1 | tee gradle-build.log
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "::error::Gradle build failed!"
-            echo "================ ERROR SUMMARY ================"
-            grep -B 2 -A 10 -E "(e: |FAILURE:|What went wrong|Execution failed)" gradle-build.log || tail -n 60 gradle-build.log
-            echo "==============================================="
-            exit 1
-          fi
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --console=plain 2>&1 | tee ../gradle-build.log
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=512m"
 
+      - name: Capture error to summary if failed
+        if: failure()
+        run: |
+          echo "## ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -B 3 -A 15 -E "(e: |FAILURE:|What went wrong|Execution failed|Compile.*failed)" gradle-build.log | tail -n 80 >> $GITHUB_STEP_SUMMARY || tail -n 60 gradle-build.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload log artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          retention-days: 7
+
       - name: Rename APK
+        if: success()
         run: |
           BRANCH="${{ github.ref_name }}"
           DATE=$(date +%Y%m%d-%H%M)
@@ -72,6 +84,7 @@ jobs:
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APK_NAME }}
@@ -79,6 +92,7 @@ jobs:
           retention-days: 30
 
       - name: Build summary
+        if: success()
         run: |
           echo "### ✅ APK Built Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
