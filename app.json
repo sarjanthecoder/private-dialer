@@ -42,6 +42,12 @@
       "expo-font",
       "./plugins/withDialer",
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "93d274a1-5e9f-4c79-970c-e87bb8d357f9"
+      }
+    },
+    "owner": "sarjan"
   }
 }
