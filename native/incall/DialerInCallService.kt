@@ -49,7 +49,7 @@ class DialerInCallService : InCallService() {
         }
 
     private fun openUi() {
-        try { launchIntent()?.let { startActivity(it) } } catch (_: Exception) { }
+        try { launchIntent()?.let { startActivity(it) } } catch (e: Exception) { }
     }
 
     private fun cancelNotification() {
@@ -77,6 +77,6 @@ class DialerInCallService : InCallService() {
             .setContentIntent(pi)
             .setFullScreenIntent(pi, true)
             .build()
-        try { nm.notify(NOTIF_ID, n) } catch (_: SecurityException) { }
+        try { nm.notify(NOTIF_ID, n) } catch (e: SecurityException) { }
     }
 }

@@ -71,7 +71,16 @@ const DialerStub: DialerNative = {
 };
 
 const nativeMod = NativeModules.Dialer as (DialerNative & NativeModule) | undefined;
-export const Dialer: DialerNative = nativeMod ?? DialerStub;
+export const Dialer: DialerNative = nativeMod
+  ? {
+      ...nativeMod,
+      dial: (digits: string, simId?: string) =>
+        (nativeMod.dial as unknown as (d: string, s: string | null) => Promise<boolean>)(
+          digits,
+          simId ?? null,
+        ),
+    }
+  : DialerStub;
 
 export interface CallEventEmitter {
   addListener(eventType: 'onCallState', listener: (info: CallInfo) => void): { remove(): void };

@@ -59,7 +59,7 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                     CallManager.updateSimCache(handle.id, slot, label)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     private fun CallSnapshot.toMap(): WritableMap = Arguments.createMap().apply {
