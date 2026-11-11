@@ -13,26 +13,22 @@ const IDLE: CallInfo = {
   photoUri: null,
   heldCallName: null,
   canMerge: false,
+  simSlot: null,
+  simLabel: null,
 };
 
 export function useCall(): CallInfo {
   const [call, setCall] = useState<CallInfo>(IDLE);
 
   useEffect(() => {
-    // Fetch initial call state (safe — stub returns IDLE_CALL if native absent)
-    Dialer.getCurrentCall().then(setCall).catch(() => { /* no-op */ });
-
-    // Subscribe; guard against NativeEventEmitter throwing when module missing
+    Dialer.getCurrentCall().then(setCall).catch(() => {});
     let sub: { remove(): void } | null = null;
     try {
       sub = callEvents.addListener('onCallState', (c: CallInfo) => setCall(c));
     } catch {
-      // Native module not linked — events won't fire, that's fine
+      // Native module not linked
     }
-
-    return () => {
-      try { sub?.remove(); } catch { /* no-op */ }
-    };
+    return () => { try { sub?.remove(); } catch { /* no-op */ } };
   }, []);
 
   return call;

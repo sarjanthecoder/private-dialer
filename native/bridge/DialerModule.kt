@@ -11,7 +11,9 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -30,6 +32,8 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     override fun initialize() {
         super.initialize()
         CallManager.addListener(listener)
+        // Prime SIM slot cache on startup
+        primeSimCache()
     }
 
     override fun invalidate() {
@@ -37,17 +41,40 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         super.invalidate()
     }
 
+    private fun primeSimCache() {
+        try {
+            val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            val accounts = tm.callCapablePhoneAccounts ?: return
+            if (Build.VERSION.SDK_INT >= 22) {
+                val sm = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                val subs = if (ctx.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED)
+                    sm?.activeSubscriptionInfoList else null
+                accounts.forEachIndexed { idx, handle ->
+                    val pa = tm.getPhoneAccount(handle) ?: return@forEachIndexed
+                    val label = pa.label?.toString() ?: "SIM ${idx + 1}"
+                    // Try to match via subscription id in handle id
+                    val subId = handle.id.toLongOrNull()?.toInt()
+                    val sub = subs?.firstOrNull { it.subscriptionId == subId }
+                    val slot = (sub?.simSlotIndex ?: idx) + 1 // 1-based for UI
+                    CallManager.updateSimCache(handle.id, slot, label)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun CallSnapshot.toMap(): WritableMap = Arguments.createMap().apply {
-        putString("state", state)
+        putString("state",       state)
         putString("displayName", displayName)
-        putBoolean("isPrivate", isPrivate)
-        putBoolean("incoming", incoming)
+        putBoolean("isPrivate",  isPrivate)
+        putBoolean("incoming",   incoming)
         putDouble("connectTime", connectTimeMillis.toDouble())
-        putBoolean("muted", muted)
-        putBoolean("speaker", speaker)
-        if (photoUri != null) putString("photoUri", photoUri) else putNull("photoUri")
+        putBoolean("muted",      muted)
+        putBoolean("speaker",    speaker)
+        if (photoUri    != null) putString("photoUri",    photoUri)    else putNull("photoUri")
         if (heldCallName != null) putString("heldCallName", heldCallName) else putNull("heldCallName")
         putBoolean("canMerge", canMerge)
+        if (simSlot  != null) putInt("simSlot",   simSlot)   else putNull("simSlot")
+        if (simLabel != null) putString("simLabel", simLabel) else putNull("simLabel")
     }
 
     private fun emit(s: CallSnapshot) {
@@ -62,13 +89,22 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     @ReactMethod
     fun getCurrentCall(promise: Promise) = promise.resolve(CallManager.snapshot().toMap())
 
-    private fun place(uri: Uri, promise: Promise) {
+    private fun place(uri: Uri, simId: String?, promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             promise.reject("E_PERMISSION", "Phone permission required"); return
         }
         try {
             val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-            tm.placeCall(uri, Bundle())
+            val extras = Bundle()
+            // If a specific SIM was requested, find the matching PhoneAccountHandle
+            if (!simId.isNullOrBlank()) {
+                val accounts = tm.callCapablePhoneAccounts
+                val handle = accounts?.firstOrNull { it.id == simId }
+                if (handle != null) {
+                    extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+                }
+            }
+            tm.placeCall(uri, extras)
             promise.resolve(true)
         } catch (e: SecurityException) {
             promise.reject("E_PERMISSION", "Phone permission required")
@@ -77,13 +113,13 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }
     }
 
-    @ReactMethod fun callPrivate(promise: Promise) = place(PrivateIdentity.dialUri(), promise)
+    @ReactMethod fun callPrivate(promise: Promise) = place(PrivateIdentity.dialUri(), null, promise)
 
     @ReactMethod
-    fun dial(digits: String, promise: Promise) {
+    fun dial(digits: String, simId: String?, promise: Promise) {
         if (digits.isBlank()) { promise.reject("E_EMPTY", "Nothing to dial"); return }
-        if (PrivateIdentity.isPrivate(digits)) place(PrivateIdentity.dialUri(), promise)
-        else place(Uri.fromParts("tel", digits, null), promise)
+        if (PrivateIdentity.isPrivate(digits)) place(PrivateIdentity.dialUri(), null, promise)
+        else place(Uri.fromParts("tel", digits, null), simId, promise)
     }
 
     @ReactMethod
@@ -98,6 +134,43 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     @ReactMethod fun hold()                  = CallManager.hold()
     @ReactMethod fun unhold()                = CallManager.unhold()
     @ReactMethod fun merge()                 = CallManager.merge()
+
+    /** Returns active SIM cards as [{id, label, slot, displaySlot}]. */
+    @ReactMethod
+    fun getSims(promise: Promise) {
+        if (ctx.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            promise.resolve(Arguments.createArray()); return
+        }
+        try {
+            val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            val accounts = tm.callCapablePhoneAccounts ?: run { promise.resolve(Arguments.createArray()); return }
+            val sm = if (Build.VERSION.SDK_INT >= 22)
+                ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+            else null
+            val subs = sm?.activeSubscriptionInfoList
+
+            val out = Arguments.createArray()
+            accounts.forEachIndexed { idx, handle ->
+                val pa = tm.getPhoneAccount(handle) ?: return@forEachIndexed
+                val label = pa.label?.toString() ?: "SIM ${idx + 1}"
+                val subId = handle.id.toLongOrNull()?.toInt()
+                val sub   = subs?.firstOrNull { it.subscriptionId == subId }
+                val slot0 = sub?.simSlotIndex ?: idx
+                val slot1 = slot0 + 1
+                // Update cache
+                CallManager.updateSimCache(handle.id, slot1, label)
+                val map = Arguments.createMap()
+                map.putString("id",           handle.id)
+                map.putString("label",        label)
+                map.putInt("slot",            slot0)
+                map.putInt("displaySlot",     slot1)
+                out.pushMap(map)
+            }
+            promise.resolve(out)
+        } catch (e: Exception) {
+            promise.resolve(Arguments.createArray())
+        }
+    }
 
     @ReactMethod
     fun isDefaultDialer(promise: Promise) {
@@ -130,10 +203,11 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }
         Thread {
             try {
-                val out = Arguments.createArray()
+                val out  = Arguments.createArray()
                 val proj = arrayOf(
                     CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.TYPE,
-                    CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME
+                    CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.PHONE_ACCOUNT_ID
                 )
                 ctx.contentResolver.query(
                     CallLog.Calls.CONTENT_URI, proj, null, null, "${CallLog.Calls.DATE} DESC"
@@ -148,7 +222,9 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                             else -> continue
                         }
                         val number = c.getString(1)
-                        val priv = PrivateIdentity.isPrivate(number)
+                        val priv   = PrivateIdentity.isPrivate(number)
+                        val accountId = c.getString(6)
+                        val simInfo = accountId?.let { CallManager.simSlotCache[it] }
                         val map = Arguments.createMap()
                         map.putString("id",   c.getLong(0).toString())
                         map.putString("type", type)
@@ -158,8 +234,15 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                             else c.getString(5)?.takeIf { it.isNotBlank() } ?: number ?: "Unknown"
                         )
                         map.putString("number", if (priv) "" else number ?: "")
-                        map.putDouble("date", c.getLong(3).toDouble())
-                        map.putInt("duration", c.getInt(4))
+                        map.putDouble("date",   c.getLong(3).toDouble())
+                        map.putInt("duration",  c.getInt(4))
+                        if (simInfo != null) {
+                            map.putInt("simSlot", simInfo.first)
+                            map.putString("simLabel", simInfo.second)
+                        } else {
+                            map.putNull("simSlot")
+                            map.putNull("simLabel")
+                        }
                         out.pushMap(map)
                         n++
                     }
@@ -171,10 +254,6 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }.start()
     }
 
-    /** Returns all phone contacts, sorted A–Z.
-     *  The private contact (RootAccess) is injected at top with an empty number so
-     *  the UI shows the name + call button but the number is never exposed anywhere.
-     */
     @ReactMethod
     fun getContacts(promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
@@ -183,15 +262,6 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         Thread {
             try {
                 val out  = Arguments.createArray()
-
-                // ── Inject private contact at the very top (number hidden, id = "private") ──
-                val privateEntry = Arguments.createMap()
-                privateEntry.putString("id",   "private")
-                privateEntry.putString("name", PrivateIdentity.DISPLAY_NAME)
-                privateEntry.putString("number", "")   // number NEVER sent to JS
-                privateEntry.putNull("photoUri")
-                out.pushMap(privateEntry)
-
                 val proj = arrayOf(
                     ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
                     ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -200,8 +270,7 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                 )
                 val seen = mutableSetOf<String>()
                 ctx.contentResolver.query(
-                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                    proj, null, null,
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI, proj, null, null,
                     "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
                 )?.use { c ->
                     val idIdx    = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
@@ -212,10 +281,8 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                         val id     = c.getLong(idIdx).toString()
                         val name   = c.getString(nameIdx)?.takeIf { it.isNotBlank() } ?: continue
                         val number = c.getString(numIdx)?.takeIf  { it.isNotBlank() } ?: continue
-                        // Skip private contact (never list it again from device contacts)
                         if (PrivateIdentity.isPrivate(number)) continue
-                        val key = "$id|${number.replace("\\s".toRegex(), "")}"
-                        if (!seen.add(key)) continue
+                        if (!seen.add("$id|${number.replace("\\s".toRegex(), "")}")) continue
                         val photoUri = c.getString(photoIdx)
                         val map = Arguments.createMap()
                         map.putString("id",   id)
@@ -232,11 +299,6 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }.start()
     }
 
-    /**
-     * Creates a new device contact with the given name + number.
-     * Returns the new raw-contact ID string on success.
-     * Requires WRITE_CONTACTS + READ_CONTACTS permissions.
-     */
     @ReactMethod
     fun addContact(contact: ReadableMap, promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.WRITE_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
@@ -245,46 +307,31 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         val name   = contact.getString("name")?.trim()   ?: ""
         val number = contact.getString("number")?.trim() ?: ""
         if (name.isEmpty() || number.isEmpty()) {
-            promise.reject("E_INVALID", "Name and number are required"); return
+            promise.reject("E_INVALID", "Name and number required"); return
         }
         Thread {
             try {
                 val ops = arrayListOf<ContentProviderOperation>()
-
-                // 1. Insert raw contact (no account → stored locally)
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
                     .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
-                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
-                    .build())
-
-                // 2. Display name
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null).build())
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                     .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
                     .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
-                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
-                    .build())
-
-                // 3. Phone number (mobile)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name).build())
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                     .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
                     .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
                     .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, number)
-                    .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
-                    .build())
-
+                    .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE).build())
                 val results = ctx.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
-                val rawId = results[0].uri?.lastPathSegment ?: "0"
-                promise.resolve(rawId)
+                promise.resolve(results[0].uri?.lastPathSegment ?: "0")
             } catch (e: Exception) {
-                promise.reject("E_ADD_CONTACT", "Unable to add contact: ${e.message}")
+                promise.reject("E_ADD", "Unable to add contact: ${e.message}")
             }
         }.start()
     }
 
-    /**
-     * Deletes the contact and all its associated data by contact ID.
-     * Requires WRITE_CONTACTS permission.
-     */
     @ReactMethod
     fun deleteContact(contactId: String, promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.WRITE_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
@@ -292,18 +339,15 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }
         Thread {
             try {
-                val contactUri = Uri.withAppendedPath(
-                    ContactsContract.Contacts.CONTENT_URI, contactId
-                )
-                val rows = ctx.contentResolver.delete(contactUri, null, null)
+                val uri  = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId)
+                val rows = ctx.contentResolver.delete(uri, null, null)
                 promise.resolve(rows > 0)
             } catch (e: Exception) {
-                promise.reject("E_DELETE_CONTACT", "Unable to delete contact: ${e.message}")
+                promise.reject("E_DELETE", "Unable to delete contact: ${e.message}")
             }
         }.start()
     }
 
-    /** Requests the highest refresh rate the panel supports. */
     @ReactMethod
     fun setHighRefreshRate(promise: Promise) {
         val act = currentActivity ?: run { promise.resolve(0.0); return }

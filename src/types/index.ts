@@ -11,6 +11,8 @@ export interface CallInfo {
   photoUri: string | null;
   heldCallName: string | null;
   canMerge: boolean;
+  simSlot: number | null;   // 1 or 2, null if unknown
+  simLabel: string | null;  // e.g. "SIM 1 – Airtel"
 }
 
 export type CallLogType = 'incoming' | 'outgoing' | 'missed' | 'rejected';
@@ -20,9 +22,10 @@ export interface CallLogEntry {
   type: CallLogType;
   name: string;
   isPrivate: boolean;
-  number: string; // empty for the private contact
+  number: string;
   date: number;
   duration: number;
+  simSlot: number | null;
 }
 
 export interface Contact {
@@ -35,6 +38,13 @@ export interface Contact {
 export interface NewContact {
   name: string;
   number: string;
+}
+
+export interface SimInfo {
+  id: string;          // PhoneAccountHandle id string
+  label: string;       // "SIM 1 – Jio" etc.
+  slot: number;        // 0-based slot index
+  displaySlot: number; // 1-based for UI
 }
 
 export type TabKey = 'dialer' | 'contacts' | 'history';
