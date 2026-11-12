@@ -1,9 +1,9 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, AppState, Linking, Modal, Pressable,
-  ScrollView, StyleSheet, Text, View,
+  Alert, AppState, FlatList, Linking, Modal, Pressable,
+  StyleSheet, Text, View, ListRenderItemInfo,
 } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../components/Avatar';
 import { Keypad } from '../components/Keypad';
@@ -11,7 +11,7 @@ import { RoundAction } from '../components/RoundAction';
 import { useContacts } from '../hooks/useContacts';
 import { Dialer } from '../services/dialer';
 import { colors, fonts } from '../theme';
-import type { SimInfo } from '../types';
+import type { Contact, SimInfo } from '../types';
 
 // ── Lightweight SIM picker bottom sheet ────────────────────────────────────────
 const SimPicker = memo(function SimPicker({
@@ -62,7 +62,7 @@ export function DialerScreen() {
   const [showSimPick,  setShowSimPick]  = useState(false);
   const [pendingCall,  setPendingCall]  = useState('');
 
-  const press    = useCallback((d: string) => setDigits((p) => (p.length < 20 ? p + d : p)), []);
+  const press     = useCallback((d: string) => setDigits((p) => (p.length < 20 ? p + d : p)), []);
   const backspace = useCallback(() => setDigits((p) => p.slice(0, -1)), []);
   const clear     = useCallback(() => setDigits(''), []);
 
@@ -101,14 +101,22 @@ export function DialerScreen() {
     let t9Regex: RegExp | null = null;
     try { t9Regex = new RegExp(t9Pattern, 'i'); } catch {}
 
-    return contacts.filter((c) => {
-      const numMatch = c.number.replace(/\D/g, '').includes(clean);
+    const list = contacts.filter((c) => {
+      const cleanNum = c.number.replace(/\D/g, '');
+      const numMatch = cleanNum.includes(clean);
       const nameMatch = t9Regex ? t9Regex.test(c.name) : false;
       return numMatch || nameMatch;
-    }).slice(0, 6);
-  }, [digits, isPrivate, contacts]);
+    });
 
-  const matchedContact = matches[0] ?? null;
+    // Sort: exact startsWith number > startsWith name > contains
+    return list.sort((a, b) => {
+      const aNum = a.number.replace(/\D/g, '');
+      const bNum = b.number.replace(/\D/g, '');
+      if (aNum.startsWith(clean) && !bNum.startsWith(clean)) return -1;
+      if (!aNum.startsWith(clean) && bNum.startsWith(clean)) return 1;
+      return a.name.localeCompare(b.name);
+    }).slice(0, 8);
+  }, [digits, isPrivate, contacts]);
 
   const fail = useCallback((e: unknown) =>
     Alert.alert('Call info', (e as Error)?.message ?? 'Unable to place call'), []);
@@ -138,18 +146,16 @@ export function DialerScreen() {
     }
   }, []);
 
-  const doCall = useCallback((digits: string, simId?: string) => {
-    Dialer.dial(digits, simId).then(() => setDigits('')).catch(fail);
+  const doCall = useCallback((numberToCall: string, simId?: string) => {
+    Dialer.dial(numberToCall, simId).then(() => setDigits('')).catch(fail);
   }, [fail]);
 
   const call = useCallback(() => {
     if (!digits) return;
     if (sims.length >= 2) {
-      // Dual SIM — ask which SIM
       setPendingCall(digits);
       setShowSimPick(true);
     } else {
-      // Single SIM or unknown — dial directly
       doCall(digits, sims[0]?.id);
     }
   }, [digits, sims, doCall]);
@@ -167,8 +173,34 @@ export function DialerScreen() {
 
   const simCount = useMemo(() => sims.length, [sims]);
 
+  const renderMatchItem = useCallback(({ item }: ListRenderItemInfo<Contact>) => (
+    <Animated.View entering={FadeInDown.duration(150)}>
+      <Pressable
+        onPress={() => setDigits(item.number)}
+        style={styles.matchCard}
+        android_ripple={{ color: 'rgba(255,255,255,0.08)' }}
+      >
+        <Avatar size={38} photoUri={item.photoUri} name={item.name} />
+        <View style={styles.matchTextWrap}>
+          <Text style={styles.matchName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.matchNumber} numberOfLines={1}>{item.number}</Text>
+        </View>
+        <Pressable
+          onPress={() => doCall(item.number, sims[0]?.id)}
+          style={styles.matchCallBtn}
+          hitSlop={12}
+        >
+          <Ionicons name="call" size={17} color={colors.green} />
+        </Pressable>
+      </Pressable>
+    </Animated.View>
+  ), [doCall, sims]);
+
+  const keyExtractor = useCallback((item: Contact) => item.id + item.number, []);
+
   return (
     <Animated.View entering={FadeIn.duration(180)} style={styles.root}>
+      {/* Top Banner if not default */}
       {!isDefault && (
         <Pressable onPress={makeDefault} style={styles.banner}>
           <Ionicons name="shield-checkmark-outline" size={18} color={colors.accent} />
@@ -176,7 +208,7 @@ export function DialerScreen() {
         </Pressable>
       )}
 
-      {/* SIM indicator strip when dual SIM */}
+      {/* Dual SIM indicator strip */}
       {simCount >= 2 && (
         <View style={styles.simStrip}>
           {sims.map((s) => (
@@ -189,71 +221,56 @@ export function DialerScreen() {
         </View>
       )}
 
-      <View style={styles.display}>
-        {identity ? (
-          <>
-            <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{identity}</Text>
-            {isPrivate && <Text style={styles.hint}>Private contact</Text>}
-          </>
-        ) : matchedContact ? (
-          <>
-            <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{matchedContact.name}</Text>
-            <Text style={styles.digitsSub} numberOfLines={1}>{digits}</Text>
-          </>
-        ) : (
-          <Text style={styles.digits} numberOfLines={1} adjustsFontSizeToFit>{digits}</Text>
-        )}
+      {/* Upper Area: Matched contacts scroll list above keypad */}
+      <View style={styles.matchContainer}>
+        {matches.length > 0 ? (
+          <FlatList
+            data={matches}
+            renderItem={renderMatchItem}
+            keyExtractor={keyExtractor}
+            contentContainerStyle={styles.matchListContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          />
+        ) : null}
       </View>
 
-      {/* T9 / live matched contact cards above keypad */}
-      {matches.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.matchScroll}
-          contentContainerStyle={styles.matchScrollContent}
-        >
-          {matches.map((c) => (
-            <Pressable
-              key={c.id + c.number}
-              onPress={() => setDigits(c.number)}
-              style={styles.matchCard}
-              android_ripple={{ color: 'rgba(255,255,255,0.08)' }}
-            >
-              <Avatar size={34} photoUri={c.photoUri} name={c.name} />
-              <View style={styles.matchTextWrap}>
-                <Text style={styles.matchName} numberOfLines={1}>{c.name}</Text>
-                <Text style={styles.matchNumber} numberOfLines={1}>{c.number}</Text>
-              </View>
-              <Pressable
-                onPress={() => doCall(c.number, sims[0]?.id)}
-                style={styles.matchCallBtn}
-                hitSlop={10}
-              >
-                <Ionicons name="call" size={15} color={colors.green} />
-              </Pressable>
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
-
-      <Keypad onPress={press} plusOnZeroLong />
-
-      <View style={styles.bottom}>
-        <View style={styles.side} />
-        <RoundAction icon="call" size={72} bg={colors.green} iconColor="#04130A" onPress={call} />
-        <View style={styles.side}>
-          {digits.length > 0 && (
-            <Pressable
-              style={styles.backspaceBtn}
-              onPress={backspace}
-              onLongPress={clear}
-              hitSlop={14}
-              android_ripple={{ color: 'rgba(255,255,255,0.1)', borderless: true }}
-            >
-              <Ionicons name="backspace-outline" size={26} color={colors.text} />
-            </Pressable>
+      {/* Bottom Area: Digits display + Keypad + Call row */}
+      <View style={styles.bottomKeypadContainer}>
+        {/* Display Bar */}
+        <View style={styles.display}>
+          {identity ? (
+            <>
+              <Text style={styles.identity} numberOfLines={1} adjustsFontSizeToFit>{identity}</Text>
+              {isPrivate && <Text style={styles.hint}>Private contact</Text>}
+            </>
+          ) : (
+            <View style={styles.digitsRow}>
+              <Text style={styles.digits} numberOfLines={1} adjustsFontSizeToFit>{digits}</Text>
+            </View>
           )}
+        </View>
+
+        {/* Dialpad */}
+        <Keypad onPress={press} plusOnZeroLong />
+
+        {/* Call and Delete Action Row */}
+        <View style={styles.bottom}>
+          <View style={styles.side} />
+          <RoundAction icon="call" size={72} bg={colors.green} iconColor="#04130A" onPress={call} />
+          <View style={styles.side}>
+            {digits.length > 0 && (
+              <Pressable
+                style={styles.backspaceBtn}
+                onPress={backspace}
+                onLongPress={clear}
+                hitSlop={14}
+                android_ripple={{ color: 'rgba(255,255,255,0.1)', borderless: true }}
+              >
+                <Ionicons name="backspace-outline" size={26} color={colors.text} />
+              </Pressable>
+            )}
+          </View>
         </View>
       </View>
 
@@ -268,27 +285,29 @@ export function DialerScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 8 },
-  banner:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 8, alignSelf: 'stretch' },
+  root:          { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 16, paddingTop: 8 },
+  banner:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 8, marginHorizontal: 8 },
   bannerText:    { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 12 },
-  simStrip:      { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  simStrip:      { flexDirection: 'row', gap: 8, marginBottom: 6, justifyContent: 'center' },
   simChip:       { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   simChipText:   { fontFamily: fonts.medium, fontSize: 11 },
-  display:       { height: 90, width: '100%', alignItems: 'center', justifyContent: 'center' },
-  digits:        { color: colors.text, fontFamily: fonts.medium, fontSize: 40, letterSpacing: 1 },
-  digitsSub:     { color: colors.textDim, fontFamily: fonts.medium, fontSize: 18, marginTop: 4 },
-  identity:      { color: colors.text, fontFamily: fonts.semibold, fontSize: 26 },
-  hint:          { color: colors.accent, fontFamily: fonts.medium, fontSize: 11, marginTop: 3, letterSpacing: 1 },
-  // Match strip
-  matchScroll:   { width: '100%', maxHeight: 54, marginBottom: 8 },
-  matchScrollContent: { gap: 10, paddingHorizontal: 4 },
-  matchCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, gap: 10 },
-  matchTextWrap: { maxWidth: 130 },
-  matchName:     { color: colors.text, fontFamily: fonts.medium, fontSize: 13 },
-  matchNumber:   { color: colors.textDim, fontFamily: fonts.regular, fontSize: 11 },
-  matchCallBtn:  { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,255,100,0.1)', alignItems: 'center', justifyContent: 'center' },
-  // Bottom
-  bottom:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 16 },
+  // Upper match container
+  matchContainer: { flex: 1, width: '100%' },
+  matchListContent: { paddingVertical: 4, gap: 6 },
+  matchCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: colors.border, gap: 12 },
+  matchTextWrap: { flex: 1 },
+  matchName:     { color: colors.text, fontFamily: fonts.medium, fontSize: 15 },
+  matchNumber:   { color: colors.textDim, fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  matchCallBtn:  { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,255,100,0.12)', alignItems: 'center', justifyContent: 'center' },
+  // Bottom Keypad Container (anchored at bottom)
+  bottomKeypadContainer: { alignItems: 'center', paddingBottom: 10 },
+  display:       { height: 60, width: '100%', alignItems: 'center', justifyContent: 'center' },
+  digitsRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  digits:        { color: colors.text, fontFamily: fonts.medium, fontSize: 36, letterSpacing: 1 },
+  identity:      { color: colors.text, fontFamily: fonts.semibold, fontSize: 24 },
+  hint:          { color: colors.accent, fontFamily: fonts.medium, fontSize: 11, marginTop: 2, letterSpacing: 1 },
+  // Bottom call button row
+  bottom:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 12 },
   side:          { width: 78, height: 72, alignItems: 'center', justifyContent: 'center' },
   backspaceBtn:  { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   // SIM picker modal

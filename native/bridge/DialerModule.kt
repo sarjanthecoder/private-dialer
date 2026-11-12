@@ -19,6 +19,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -152,6 +153,25 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
 
     @ReactMethod
     fun resolveInput(digits: String, promise: Promise) = promise.resolve(PrivateIdentity.resolve(digits))
+
+    // ── Call Recording ────────────────────────────────────────────────────────
+    @ReactMethod
+    fun startRecording(contactName: String, promise: Promise) {
+        if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            promise.reject("E_PERMISSION", "RECORD_AUDIO permission required"); return
+        }
+        CallRecorder.start(ctx, contactName)
+        promise.resolve(CallRecorder.isRecording)
+    }
+
+    @ReactMethod
+    fun stopRecording(promise: Promise) {
+        val path = CallRecorder.stop()
+        promise.resolve(path)
+    }
+
+    @ReactMethod
+    fun isRecording(promise: Promise) = promise.resolve(CallRecorder.isRecording)
 
     @ReactMethod fun answer()                = CallManager.answer()
     @ReactMethod fun reject()                = CallManager.reject()
@@ -379,6 +399,36 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     }
 
     @ReactMethod
+    fun getAccounts(promise: Promise) {
+        try {
+            val am = android.accounts.AccountManager.get(ctx)
+            val accounts = am.accounts
+            val arr = Arguments.createArray()
+            val phoneMap = Arguments.createMap()
+            phoneMap.putString("name", "Phone Storage")
+            phoneMap.putString("type", "phone")
+            arr.pushMap(phoneMap)
+
+            accounts.forEach {
+                if (it.type == "com.google" || it.type.contains("email", ignoreCase = true)) {
+                    val map = Arguments.createMap()
+                    map.putString("name", it.name)
+                    map.putString("type", it.type)
+                    arr.pushMap(map)
+                }
+            }
+            promise.resolve(arr)
+        } catch (e: Exception) {
+            val arr = Arguments.createArray()
+            val phoneMap = Arguments.createMap()
+            phoneMap.putString("name", "Phone Storage")
+            phoneMap.putString("type", "phone")
+            arr.pushMap(phoneMap)
+            promise.resolve(arr)
+        }
+    }
+
+    @ReactMethod
     fun addContact(contact: ReadableMap, promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.WRITE_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             promise.reject("E_PERMISSION", "Write contacts permission required"); return
@@ -388,21 +438,50 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         if (name.isEmpty() || number.isEmpty()) {
             promise.reject("E_INVALID", "Name and number required"); return
         }
+        // Optional: emails (ReadableArray), location (String), accountName & accountType
+        val emailsArr   = if (contact.hasKey("emails")) contact.getArray("emails") else null
+        val location    = if (contact.hasKey("location")) contact.getString("location")?.trim() else null
+        val accountName = if (contact.hasKey("accountName")) contact.getString("accountName")?.takeIf { it != "Phone Storage" } else null
+        val accountType = if (contact.hasKey("accountType")) contact.getString("accountType")?.takeIf { it != "phone" } else null
+
         Thread {
             try {
                 val ops = arrayListOf<ContentProviderOperation>()
+                // 1. Raw contact with account selection
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
-                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
-                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null).build())
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, accountType)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, accountName).build())
+                // 2. Display name
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                     .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
                     .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
                     .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name).build())
+                // 3. Phone number
                 ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                     .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
                     .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
                     .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, number)
                     .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE).build())
+                // 4. Emails (multiple)
+                if (emailsArr != null) {
+                    for (i in 0 until emailsArr.size()) {
+                        val email = emailsArr.getString(i)?.trim() ?: continue
+                        if (email.isEmpty()) continue
+                        ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                            .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                            .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+                            .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, email)
+                            .withValue(ContactsContract.CommonDataKinds.Email.TYPE, ContactsContract.CommonDataKinds.Email.TYPE_HOME).build())
+                    }
+                }
+                // 5. Location / address
+                if (!location.isNullOrEmpty()) {
+                    ops.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.StructuredPostal.FORMATTED_ADDRESS, location)
+                        .withValue(ContactsContract.CommonDataKinds.StructuredPostal.TYPE, ContactsContract.CommonDataKinds.StructuredPostal.TYPE_HOME).build())
+                }
                 val results = ctx.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
                 promise.resolve(results[0].uri?.lastPathSegment ?: "0")
             } catch (e: Exception) {

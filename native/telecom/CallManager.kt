@@ -84,6 +84,9 @@ internal object CallManager {
         call.unregisterCallback(callback)
         calls.remove(call)
         incomingCalls.remove(call)
+        if (calls.isEmpty()) {
+            try { CallRecorder.stop() } catch (e: Exception) {}
+        }
         publish()
     }
 

@@ -30,7 +30,9 @@
         "android.permission.WRITE_CONTACTS",
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_CALL_LOG"
       ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",

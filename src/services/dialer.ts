@@ -33,6 +33,10 @@ export interface DialerNative {
   blockNumber(number: string): Promise<boolean>;
   unblockNumber(number: string): Promise<boolean>;
   getBlockedNumbers(): Promise<string[]>;
+  getAccounts(): Promise<{ name: string; type: string }[]>;
+  startRecording(contactName: string): Promise<boolean>;
+  stopRecording(): Promise<string | null>;
+  isRecording(): Promise<boolean>;
 }
 
 const IDLE_CALL: CallInfo = {
@@ -76,6 +80,10 @@ const DialerStub: DialerNative = {
   blockNumber:          () => Promise.resolve(false),
   unblockNumber:        () => Promise.resolve(false),
   getBlockedNumbers:    () => Promise.resolve([]),
+  getAccounts:          () => Promise.resolve([{ name: 'Phone Storage', type: 'phone' }]),
+  startRecording:       () => Promise.resolve(false),
+  stopRecording:        () => Promise.resolve(null),
+  isRecording:          () => Promise.resolve(false),
 };
 
 const nativeMod = NativeModules.Dialer as (DialerNative & NativeModule) | undefined;
@@ -108,6 +116,7 @@ export async function requestRuntimePermissions(): Promise<boolean> {
     P.ANSWER_PHONE_CALLS,
     P.READ_CONTACTS,
     P.WRITE_CONTACTS,
+    P.RECORD_AUDIO,
   ];
   if (Number(Platform.Version) >= 33) list.push(P.POST_NOTIFICATIONS);
   const res = await PermissionsAndroid.requestMultiple(list);
