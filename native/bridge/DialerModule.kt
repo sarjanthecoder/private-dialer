@@ -231,6 +231,8 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
         }
         Thread {
             try {
+                val prefs = ctx.getSharedPreferences("rootaccess_blocked_prefs", Context.MODE_PRIVATE)
+                val blockedSet = prefs.getStringSet("blocked_numbers", emptySet()) ?: emptySet()
                 val out  = Arguments.createArray()
                 val proj = arrayOf(
                     CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.TYPE,
@@ -253,10 +255,13 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                         val priv   = PrivateIdentity.isPrivate(number)
                         val accountId = c.getString(6)
                         val simInfo = accountId?.let { CallManager.simSlotCache[it] }
+                        val cleanNum = number?.filter { it.isDigit() }?.takeLast(10) ?: ""
+                        val isBlocked = cleanNum.isNotEmpty() && blockedSet.contains(cleanNum)
                         val map = Arguments.createMap()
                         map.putString("id",   c.getLong(0).toString())
                         map.putString("type", type)
                         map.putBoolean("isPrivate", priv)
+                        map.putBoolean("isBlocked", isBlocked)
                         map.putString("name",
                             if (priv) PrivateIdentity.DISPLAY_NAME
                             else c.getString(5)?.takeIf { it.isNotBlank() } ?: number ?: "Unknown"
@@ -283,11 +288,56 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
     }
 
     @ReactMethod
+    fun deleteCallLog(id: String, promise: Promise) {
+        Thread {
+            try {
+                val count = ctx.contentResolver.delete(
+                    CallLog.Calls.CONTENT_URI,
+                    "${CallLog.Calls._ID} = ?",
+                    arrayOf(id)
+                )
+                promise.resolve(count > 0)
+            } catch (e: Exception) {
+                promise.reject("E_DELETE", "Could not delete call log: ${e.message}")
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun blockNumber(number: String, promise: Promise) {
+        val clean = number.filter { it.isDigit() }.takeLast(10)
+        if (clean.isBlank()) { promise.resolve(false); return }
+        val prefs = ctx.getSharedPreferences("rootaccess_blocked_prefs", Context.MODE_PRIVATE)
+        val set = prefs.getStringSet("blocked_numbers", emptySet())?.toMutableSet() ?: mutableSetOf()
+        set.add(clean)
+        prefs.edit().putStringSet("blocked_numbers", set).apply()
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun unblockNumber(number: String, promise: Promise) {
+        val clean = number.filter { it.isDigit() }.takeLast(10)
+        val prefs = ctx.getSharedPreferences("rootaccess_blocked_prefs", Context.MODE_PRIVATE)
+        val set = prefs.getStringSet("blocked_numbers", emptySet())?.toMutableSet() ?: mutableSetOf()
+        set.remove(clean)
+        prefs.edit().putStringSet("blocked_numbers", set).apply()
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun getBlockedNumbers(promise: Promise) {
+        val prefs = ctx.getSharedPreferences("rootaccess_blocked_prefs", Context.MODE_PRIVATE)
+        val set = prefs.getStringSet("blocked_numbers", emptySet()) ?: emptySet()
+        val arr = Arguments.createArray()
+        set.forEach { arr.pushString(it) }
+        promise.resolve(arr)
+    }
+
+    @ReactMethod
     fun getContacts(promise: Promise) {
         if (ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             promise.reject("E_PERMISSION", "Contacts permission required"); return
         }
-        
         Thread {
             try {
                 val out  = Arguments.createArray()
@@ -302,17 +352,17 @@ class DialerModule(private val ctx: ReactApplicationContext) : ReactContextBaseJ
                     ContactsContract.CommonDataKinds.Phone.CONTENT_URI, proj, null, null,
                     "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
                 )?.use { c ->
-                    val idIdx    = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
-                    val nameIdx  = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                    val numIdx   = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    val photoIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
+                    val idIdx    = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+                    val nameIdx  = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numIdx   = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    val photoIdx = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI)
                     while (c.moveToNext()) {
-                        val id     = if (idIdx >= 0) c.getLong(idIdx).toString() else ""
-                        val name   = (if (nameIdx >= 0) c.getString(nameIdx) else null)?.takeIf { it.isNotBlank() } ?: continue
-                        val number = (if (numIdx >= 0) c.getString(numIdx) else null)?.takeIf { it.isNotBlank() } ?: continue
+                        val id     = c.getLong(idIdx).toString()
+                        val name   = c.getString(nameIdx)?.takeIf { it.isNotBlank() } ?: continue
+                        val number = c.getString(numIdx)?.takeIf  { it.isNotBlank() } ?: continue
                         if (PrivateIdentity.isPrivate(number)) continue
                         if (!seen.add("$id|${number.replace("\\s".toRegex(), "")}")) continue
-                        val photoUri = if (photoIdx >= 0) c.getString(photoIdx) else null
+                        val photoUri = c.getString(photoIdx)
                         val map = Arguments.createMap()
                         map.putString("id",   id)
                         map.putString("name", name)

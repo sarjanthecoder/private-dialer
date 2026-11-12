@@ -26,6 +26,7 @@ class DialerInCallService : InCallService() {
                 }
             })
             showIncoming()
+            openUi()
         } else {
             openUi()
         }
@@ -67,6 +68,23 @@ class DialerInCallService : InCallService() {
         val pi = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        // Action 1: Green Answer button in notification
+        val answerIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = CallActionReceiver.ACTION_ANSWER
+        }
+        val answerPendingIntent = PendingIntent.getBroadcast(
+            this, 101, answerIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Action 2: Red Decline button in notification
+        val rejectIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = CallActionReceiver.ACTION_REJECT
+        }
+        val rejectPendingIntent = PendingIntent.getBroadcast(
+            this, 102, rejectIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -80,6 +98,17 @@ class DialerInCallService : InCallService() {
             .setOngoing(true)
             .setContentIntent(pi)
             .setFullScreenIntent(pi, true)
+            .addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.sym_action_call, "Answer", answerPendingIntent
+                ).build()
+            )
+            .addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.ic_menu_close_clear_cancel, "Decline", rejectPendingIntent
+                ).build()
+            )
+            .setCategory(Notification.CATEGORY_CALL)
             .build()
         try { nm.notify(NOTIF_ID, n) } catch (e: SecurityException) { }
     }

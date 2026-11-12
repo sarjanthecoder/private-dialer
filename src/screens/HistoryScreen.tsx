@@ -17,7 +17,47 @@ export function HistoryScreen() {
     const p = e.isPrivate ? Dialer.callPrivate() : Dialer.dial(e.number);
     p.catch((err: Error) => Alert.alert('Call failed', err.message));
   }, []);
-  const render = useCallback(({ item }: { item: CallLogEntry }) => <CallRow item={item} onPress={callBack} />, [callBack]);
+
+  const handleAction = useCallback((item: CallLogEntry) => {
+    const isBlocked = !!item.isBlocked;
+    Alert.alert(
+      item.name || item.number,
+      item.number,
+      [
+        { text: 'Call', onPress: () => callBack(item) },
+        {
+          text: isBlocked ? 'Unblock Number' : 'Block Number',
+          style: isBlocked ? 'default' : 'destructive',
+          onPress: async () => {
+            if (isBlocked) {
+              await Dialer.unblockNumber(item.number);
+              Alert.alert('Unblocked', `${item.name || item.number} unblocked.`);
+            } else {
+              await Dialer.blockNumber(item.number);
+              Alert.alert('Blocked', `${item.name || item.number} blocked.`);
+            }
+            refresh();
+          },
+        },
+        {
+          text: 'Delete Call Log',
+          style: 'destructive',
+          onPress: async () => {
+            await Dialer.deleteCallLog(item.id);
+            refresh();
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, [callBack, refresh]);
+
+  const render = useCallback(
+    ({ item }: { item: CallLogEntry }) => (
+      <CallRow item={item} onPress={callBack} onLongPress={handleAction} />
+    ),
+    [callBack, handleAction]
+  );
 
   return (
     <Animated.View entering={FadeIn.duration(180)} style={styles.root}>
