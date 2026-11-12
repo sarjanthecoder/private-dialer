@@ -1,5 +1,5 @@
 // Expo config plugin: wires the Kotlin telecom layer into the generated Android project.
-const { withAndroidManifest, withMainApplication, withDangerousMod } = require('expo/config-plugins');
+const { withAndroidManifest, withMainApplication, withMainActivity, withDangerousMod } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -100,6 +100,29 @@ module.exports = function withDialer(config) {
       } else {
         src = src.replace('return packages', 'packages.add(DialerPackage())\n          return packages');
       }
+    }
+    cfg.modResults.contents = src;
+    return cfg;
+  });
+
+  // 4. Inject showWhenLocked and turnScreenOn into MainActivity.kt for full-screen incoming call wake
+  config = withMainActivity(config, (cfg) => {
+    let src = cfg.modResults.contents;
+    if (!src.includes('setShowWhenLocked')) {
+      const lockCode = `super.onCreate(null)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+      setShowWhenLocked(true)
+      setTurnScreenOn(true)
+    } else {
+      @Suppress("DEPRECATION")
+      window.addFlags(
+        android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+        android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+        android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+        android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+      )
+    }`;
+      src = src.replace('super.onCreate(null)', lockCode);
     }
     cfg.modResults.contents = src;
     return cfg;

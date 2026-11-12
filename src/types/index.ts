@@ -34,11 +34,17 @@ export interface Contact {
   name: string;
   number: string;
   photoUri: string | null;
+  emails?: string[];
+  location?: string;
 }
 
 export interface NewContact {
   name: string;
   number: string;
+  emails?: string[];
+  location?: string;
+  accountName?: string;
+  accountType?: string;
 }
 
 export interface SimInfo {

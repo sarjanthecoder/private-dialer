@@ -44,52 +44,82 @@ import type { Contact } from '../types';
 // ── Contact form modal ────────────────────────────────────────────────────────
 interface FormModalProps {
   visible: boolean;
-  initial?: Contact | null;
   onClose: () => void;
   onSaved: () => void;
 }
-const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }: FormModalProps) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [number, setNumber] = useState(initial?.number ?? '');
-  const [saving, setSaving] = useState(false);
-  const nameRef = useRef<TextInput>(null);
-  const numberRef = useRef<TextInput>(null);
+const FormModal = memo(function FormModal({ visible, onClose, onSaved }: FormModalProps) {
+  const [name, setName]               = useState('');
+  const [number, setNumber]           = useState('');
+  const [location, setLocation]       = useState('');
+  const [emailInput, setEmailInput]   = useState('');
+  const [emails, setEmails]           = useState<string[]>([]);
+  const [accounts, setAccounts]       = useState<{ name: string; type: string }[]>([]);
+  const [selectedAcc, setSelectedAcc] = useState<{ name: string; type: string }>({ name: 'Phone Storage', type: 'phone' });
+  const [saving, setSaving]           = useState(false);
+
+  const nameRef     = useRef<TextInput>(null);
+  const numberRef   = useRef<TextInput>(null);
+  const locationRef = useRef<TextInput>(null);
+  const emailRef    = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
-      setName(initial?.name ?? '');
-      setNumber(initial?.number ?? '');
+      setName('');
+      setNumber('');
+      setLocation('');
+      setEmailInput('');
+      setEmails([]);
       setSaving(false);
-      // Focus name field after modal opens
+      Dialer.getAccounts().then((accs) => {
+        if (accs && accs.length > 0) {
+          setAccounts(accs);
+          setSelectedAcc(accs[0]);
+        }
+      }).catch(() => {});
       const t = setTimeout(() => nameRef.current?.focus(), 300);
       return () => clearTimeout(t);
     }
-  }, [visible, initial]);
+  }, [visible]);
 
-  const isEditing = !!initial;
+  const addEmail = useCallback(() => {
+    const e = emailInput.trim();
+    if (e && !emails.includes(e)) {
+      setEmails((prev) => [...prev, e]);
+      setEmailInput('');
+    }
+  }, [emailInput, emails]);
+
+  const removeEmail = useCallback((eToRemove: string) => {
+    setEmails((prev) => prev.filter((e) => e !== eToRemove));
+  }, []);
 
   const handleSave = useCallback(async () => {
     const n = name.trim();
     const p = number.trim().replace(/\s/g, '');
     if (!n) { Alert.alert('Required', 'Enter a name'); return; }
-    if (!p) { Alert.alert('Required', 'Enter a number'); return; }
+    if (!p) { Alert.alert('Required', 'Enter a phone number'); return; }
     Keyboard.dismiss();
     setSaving(true);
     try {
-      if (isEditing && initial) {
-        // Edit = delete old + create new (simpler than partial-update via ContentProviderOperation batch)
-        await Dialer.deleteContact(initial.id);
-        await Dialer.addContact({ name: n, number: p });
-      } else {
-        await Dialer.addContact({ name: n, number: p });
+      const allEmails = [...emails];
+      if (emailInput.trim() && !allEmails.includes(emailInput.trim())) {
+        allEmails.push(emailInput.trim());
       }
+      await Dialer.addContact({
+        name: n,
+        number: p,
+        emails: allEmails,
+        location: location.trim(),
+        accountName: selectedAcc.name,
+        accountType: selectedAcc.type,
+      });
       onSaved();
       onClose();
     } catch (e: unknown) {
       Alert.alert('Error', (e as Error)?.message ?? 'Could not save contact');
       setSaving(false);
     }
-  }, [name, number, isEditing, initial, onSaved, onClose]);
+  }, [name, number, emails, emailInput, location, selectedAcc, onSaved, onClose]);
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -99,9 +129,35 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
           <Animated.View entering={SlideInDown.springify().damping(22).stiffness(260)} exiting={SlideOutDown.duration(220)} style={styles.sheet}>
             {/* Handle */}
             <View style={styles.handle} />
-            <Text style={styles.sheetTitle}>{isEditing ? 'Edit Contact' : 'New Contact'}</Text>
+            <Text style={styles.sheetTitle}>New Contact</Text>
+
+            {/* Save Location (Phone vs Google Account / Email) */}
+            <Text style={styles.fieldLabel}>Save to location:</Text>
+            <View style={styles.accRow}>
+              {accounts.map((acc) => {
+                const isSelected = selectedAcc.name === acc.name && selectedAcc.type === acc.type;
+                const isPhone = acc.type === 'phone';
+                return (
+                  <Pressable
+                    key={acc.name + acc.type}
+                    onPress={() => setSelectedAcc(acc)}
+                    style={[styles.accChip, isSelected && styles.accChipSelected]}
+                  >
+                    <Ionicons
+                      name={isPhone ? 'phone-portrait-outline' : 'mail-outline'}
+                      size={14}
+                      color={isSelected ? '#fff' : colors.textDim}
+                    />
+                    <Text style={[styles.accChipText, isSelected && styles.accChipTextSelected]} numberOfLines={1}>
+                      {acc.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <View style={styles.fieldGroup}>
+              {/* Full name */}
               <View style={styles.field}>
                 <Ionicons name="person-outline" size={18} color={colors.textDim} style={styles.fieldIcon} />
                 <TextInput
@@ -117,6 +173,8 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
                   autoCorrect={false}
                 />
               </View>
+
+              {/* Phone number */}
               <View style={[styles.field, { marginTop: 10 }]}>
                 <Ionicons name="call-outline" size={18} color={colors.textDim} style={styles.fieldIcon} />
                 <TextInput
@@ -126,11 +184,62 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
                   placeholderTextColor={colors.textDim}
                   value={number}
                   onChangeText={setNumber}
-                  returnKeyType="done"
+                  returnKeyType="next"
                   keyboardType="phone-pad"
-                  onSubmitEditing={handleSave}
+                  onSubmitEditing={() => locationRef.current?.focus()}
                 />
               </View>
+
+              {/* Location / City */}
+              <View style={[styles.field, { marginTop: 10 }]}>
+                <Ionicons name="location-outline" size={18} color={colors.textDim} style={styles.fieldIcon} />
+                <TextInput
+                  ref={locationRef}
+                  style={styles.fieldInput}
+                  placeholder="Location / City / Place"
+                  placeholderTextColor={colors.textDim}
+                  value={location}
+                  onChangeText={setLocation}
+                  returnKeyType="next"
+                  onSubmitEditing={() => emailRef.current?.focus()}
+                />
+              </View>
+
+              {/* Email Address with Add button */}
+              <View style={[styles.field, { marginTop: 10 }]}>
+                <Ionicons name="mail-outline" size={18} color={colors.textDim} style={styles.fieldIcon} />
+                <TextInput
+                  ref={emailRef}
+                  style={styles.fieldInput}
+                  placeholder="Email address"
+                  placeholderTextColor={colors.textDim}
+                  value={emailInput}
+                  onChangeText={setEmailInput}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  returnKeyType="done"
+                  onSubmitEditing={addEmail}
+                />
+                {emailInput.trim().length > 0 && (
+                  <Pressable onPress={addEmail} hitSlop={8} style={styles.emailAddBtn}>
+                    <Ionicons name="add" size={18} color={colors.accent} />
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Email Chips */}
+              {emails.length > 0 && (
+                <View style={styles.emailChipRow}>
+                  {emails.map((e) => (
+                    <View key={e} style={styles.emailChip}>
+                      <Text style={styles.emailChipText} numberOfLines={1}>{e}</Text>
+                      <Pressable onPress={() => removeEmail(e)} hitSlop={6}>
+                        <Ionicons name="close-circle" size={15} color={colors.textDim} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={styles.sheetActions}>
@@ -140,7 +249,7 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
               <Pressable onPress={handleSave} style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving}>
                 {saving
                   ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.saveText}>{isEditing ? 'Save' : 'Add Contact'}</Text>
+                  : <Text style={styles.saveText}>Save Contact</Text>
                 }
               </Pressable>
             </View>
@@ -154,17 +263,14 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
 // ── Contact row ───────────────────────────────────────────────────────────────
 interface RowProps {
   item: Contact;
-  onEdit: (c: Contact) => void;
   onDelete: (c: Contact) => void;
 }
 
-const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps) {
+const ContactRow = memo(function ContactRow({ item, onDelete }: RowProps) {
   const scale = useSharedValue(1);
 
   const dial = useCallback(() => {
-    // Private contact has empty number — route through callPrivate() so the number is never in JS
-    const p = item.number ? Dialer.dial(item.number) : Dialer.callPrivate();
-    p.catch((e: unknown) =>
+    Dialer.dial(item.number).catch((e: unknown) =>
       Alert.alert('Call failed', (e as Error)?.message ?? 'Unable to place call')
     );
   }, [item.number]);
@@ -186,10 +292,7 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
         <Avatar size={46} photoUri={item.photoUri} name={item.name} />
         <View style={styles.rowText}>
           <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-          {/* Show number for normal contacts; hide for private (number is '') */}
-          <Text style={styles.rowSub} numberOfLines={1}>
-            {item.number ? item.number : 'Private'}
-          </Text>
+          <Text style={styles.rowSub} numberOfLines={1}>{item.number}</Text>
         </View>
         {/* Quick-call button */}
         <Pressable
@@ -200,16 +303,10 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
         >
           <Ionicons name="call" size={19} color={colors.green} />
         </Pressable>
-        {/* More options — hide delete for private pinned contact */}
+        {/* Delete option */}
         <Pressable
           onPress={() => {
-            if (!item.number) {
-              // Private contact — no edit/delete
-              Alert.alert(item.name, 'This is a private contact.', [{ text: 'OK' }]);
-              return;
-            }
-            Alert.alert(item.name, item.number, [
-              { text: 'Edit', onPress: () => onEdit(item) },
+            Alert.alert(item.name, `Delete "${item.name}"?`, [
               { text: 'Delete', onPress: () => onDelete(item), style: 'destructive' },
               { text: 'Cancel', style: 'cancel' },
             ]);
@@ -218,7 +315,7 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
           style={styles.moreIcon}
           android_ripple={{ color: 'rgba(255,255,255,0.08)', borderless: true }}
         >
-          <Ionicons name="ellipsis-vertical" size={18} color={colors.textDim} />
+          <Ionicons name="trash-outline" size={18} color={colors.textDim} />
         </Pressable>
       </Pressable>
     </Animated.View>
@@ -230,22 +327,62 @@ export function ContactsScreen() {
   const { contacts, loading, error, refresh } = useContacts();
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [editTarget, setEditTarget] = useState<Contact | null>(null);
   const fabScale = useSharedValue(1);
 
+  // Enhanced search strategy: multi-term, phone number substring, T9 letter matching, and relevance sorting
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return contacts;
-    const digitsOnly = q.replace(/\D/g, '');
-    return contacts.filter((c) => {
-      const nameMatch = c.name.toLowerCase().includes(q);
-      const numMatch = digitsOnly.length > 0 && c.number.replace(/\D/g, '').includes(digitsOnly);
-      return nameMatch || numMatch;
+    const cleanDigits = q.replace(/\D/g, '');
+    const words = q.split(/\s+/).filter(Boolean);
+
+    // T9 regex if digits only
+    let t9Regex: RegExp | null = null;
+    if (cleanDigits.length > 0 && /^\d+$/.test(q)) {
+      const t9: Record<string, string> = {
+        '2': '[abc]', '3': '[def]', '4': '[ghi]', '5': '[jkl]',
+        '6': '[mno]', '7': '[pqrs]', '8': '[tuv]', '9': '[wxyz]'
+      };
+      const t9Pattern = cleanDigits.split('').map((d) => t9[d] || d).join('');
+      try { t9Regex = new RegExp(t9Pattern, 'i'); } catch {}
+    }
+
+    const matches = contacts.filter((c) => {
+      const lowerName = c.name.toLowerCase();
+      const cleanNum = c.number.replace(/\D/g, '');
+
+      // Name matches all words in query
+      const nameMatch = words.every((w) => lowerName.includes(w));
+      // Phone number contains query digits
+      const numMatch = cleanDigits.length > 0 && cleanNum.includes(cleanDigits);
+      // T9 name match
+      const t9Match = t9Regex ? t9Regex.test(lowerName) : false;
+
+      return nameMatch || numMatch || t9Match;
+    });
+
+    // Sort by relevance: startsWith name > startsWith number > contains
+    return matches.sort((a, b) => {
+      const aName = a.name.toLowerCase();
+      const bName = b.name.toLowerCase();
+      const aStarts = aName.startsWith(q);
+      const bStarts = bName.startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+
+      if (cleanDigits.length > 0) {
+        const aNum = a.number.replace(/\D/g, '');
+        const bNum = b.number.replace(/\D/g, '');
+        const aNumStarts = aNum.startsWith(cleanDigits);
+        const bNumStarts = bNum.startsWith(cleanDigits);
+        if (aNumStarts && !bNumStarts) return -1;
+        if (!aNumStarts && bNumStarts) return 1;
+      }
+      return aName.localeCompare(bName);
     });
   }, [contacts, query]);
 
-  const openNew = useCallback(() => { setEditTarget(null); setShowForm(true); }, []);
-  const openEdit = useCallback((c: Contact) => { setEditTarget(c); setShowForm(true); }, []);
+  const openNew = useCallback(() => setShowForm(true), []);
   const closeForm = useCallback(() => setShowForm(false), []);
 
   const handleDelete = useCallback((c: Contact) => {
@@ -270,8 +407,8 @@ export function ContactsScreen() {
   }, [refresh]);
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<Contact>) => (
-    <ContactRow item={item} onEdit={openEdit} onDelete={handleDelete} />
-  ), [openEdit, handleDelete]);
+    <ContactRow item={item} onDelete={handleDelete} />
+  ), [handleDelete]);
 
   const keyExtractor = useCallback((item: Contact) => item.id + item.number, []);
   const separator = useCallback(() => <View style={styles.sep} />, []);
@@ -371,10 +508,9 @@ export function ContactsScreen() {
         </Pressable>
       </Animated.View>
 
-      {/* Add / Edit modal */}
+      {/* Add modal */}
       <FormModal
         visible={showForm}
-        initial={editTarget}
         onClose={closeForm}
         onSaved={refresh}
       />
@@ -410,11 +546,21 @@ const styles = StyleSheet.create({
   sheetWrap: { justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, borderTopWidth: 1, borderColor: colors.border },
   handle: { width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle: { color: colors.text, fontFamily: fonts.semibold, fontSize: 20, marginBottom: 20 },
+  sheetTitle: { color: colors.text, fontFamily: fonts.semibold, fontSize: 20, marginBottom: 16 },
+  fieldLabel: { color: colors.textDim, fontFamily: fonts.medium, fontSize: 13, marginBottom: 8 },
+  accRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  accChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, maxWidth: '90%' },
+  accChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  accChipText: { color: colors.textDim, fontFamily: fonts.medium, fontSize: 12 },
+  accChipTextSelected: { color: '#fff' },
   fieldGroup: { gap: 0 },
   field: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
   fieldIcon: { flexShrink: 0 },
   fieldInput: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 16, padding: 0 },
+  emailAddBtn: { padding: 4 },
+  emailChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  emailChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.bg, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: colors.border },
+  emailChipText: { color: colors.text, fontFamily: fonts.regular, fontSize: 13, maxWidth: 220 },
   sheetActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 14, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   cancelText: { color: colors.textDim, fontFamily: fonts.medium, fontSize: 15 },

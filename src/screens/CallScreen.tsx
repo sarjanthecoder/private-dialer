@@ -8,6 +8,7 @@ import Animated, {
   useAnimatedStyle, useSharedValue,
   withRepeat, withTiming,
 } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../components/Avatar';
 import { Keypad } from '../components/Keypad';
 import { RoundAction } from '../components/RoundAction';
@@ -76,14 +77,19 @@ const SimBadge = memo(function SimBadge({ slot, label }: { slot: number; label: 
 
 // ── Main CallScreen ───────────────────────────────────────────────────────────
 export function CallScreen({ call }: { call: CallInfo }) {
-  const [showPad, setShowPad] = useState(false);
-  const [typed,   setTyped]   = useState('');
-  const [onHold,  setOnHold]  = useState(false);
+  const [showPad,    setShowPad]    = useState(false);
+  const [typed,      setTyped]      = useState('');
+  const [onHold,     setOnHold]     = useState(false);
+  const [recording,  setRecording]  = useState(false);
 
   useEffect(() => {
     if (call.state === 'idle')     { setShowPad(false); setTyped(''); setOnHold(false); }
     if (call.state === 'holding')  setOnHold(true);
     if (call.state === 'active')   setOnHold(false);
+    // Auto-stop recording when call ends
+    if (call.state === 'idle' && recording) {
+      Dialer.stopRecording().then(() => setRecording(false)).catch(() => setRecording(false));
+    }
   }, [call.state]);
 
   const answer        = useCallback(() => Dialer.answer(), []);
@@ -101,6 +107,16 @@ export function CallScreen({ call }: { call: CallInfo }) {
     Dialer.sendDtmf(d);
     setTyped((t) => (t + d).slice(-18));
   }, []);
+
+  const toggleRecording = useCallback(async () => {
+    if (recording) {
+      await Dialer.stopRecording();
+      setRecording(false);
+    } else {
+      await Dialer.startRecording(call.displayName ?? 'call');
+      setRecording(true);
+    }
+  }, [recording, call.displayName]);
 
   const ringing  = call.state === 'ringing';
   const pulsing  = ringing || call.state === 'dialing';
@@ -199,6 +215,26 @@ export function CallScreen({ call }: { call: CallInfo }) {
               />
             </View>
 
+            {/* Row 3: Recording indicator + Record button */}
+            <View style={styles.rowBetween}>
+              <View style={styles.recIndicator}>
+                {recording && (
+                  <>
+                    <Animated.View style={[styles.recDot]} />
+                    <Text style={styles.recLabel}>REC</Text>
+                  </>
+                )}
+              </View>
+              <RoundAction
+                icon={recording ? 'stop-circle' : 'radio-button-on'}
+                bg={recording ? colors.red : colors.surfaceStrong}
+                iconColor={recording ? '#fff' : colors.red}
+                label={recording ? 'Stop Rec' : 'Record'}
+                onPress={toggleRecording}
+              />
+              <View style={styles.recIndicator} />
+            </View>
+
             {/* Bottom: Centered Big Red End Call */}
             <View style={styles.hangupWrap}>
               <RoundAction icon="call" size={78} bg={colors.red} iconColor="#fff" rotate={135} onPress={hangup} />
@@ -227,4 +263,7 @@ const styles = StyleSheet.create({
   rowBetween:   { flexDirection: 'row', justifyContent: 'space-around', alignSelf: 'stretch', alignItems: 'center' },
   hangupWrap:   { marginTop: 12, alignItems: 'center' },
   placeholder:  { width: 64, height: 64 },
+  recIndicator: { width: 72, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  recDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.red },
+  recLabel:     { color: colors.red, fontFamily: fonts.semibold, fontSize: 13, letterSpacing: 1 },
 });
