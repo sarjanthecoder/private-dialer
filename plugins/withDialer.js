@@ -46,10 +46,20 @@ module.exports = function withDialer(config) {
         'intent-filter': [{ action: [attr('android.telecom.InCallService')] }],
       });
     }
+
+    app.receiver = app.receiver || [];
+    if (!app.receiver.some((r) => r.$['android:name'] === '.CallActionReceiver')) {
+      app.receiver.push({
+        $: {
+          'android:name': '.CallActionReceiver',
+          'android:exported': 'false',
+        },
+      });
+    }
     return cfg;
   });
 
-  // 2. Copy Kotlin sources into the app package
+  // 2. Copy Kotlin sources into the app package & bundle fonts directly to assets
   config = withDangerousMod(config, [
     'android',
     (cfg) => {
@@ -57,6 +67,18 @@ module.exports = function withDialer(config) {
       const dest = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/java', ...pkg.split('.'));
       fs.mkdirSync(dest, { recursive: true });
       copyDir(path.join(cfg.modRequest.projectRoot, 'native'), dest);
+
+      // Copy icon fonts directly to android assets/fonts so icons are always visible offline
+      const fontsDest = path.join(cfg.modRequest.platformProjectRoot, 'app/src/main/assets/fonts');
+      fs.mkdirSync(fontsDest, { recursive: true });
+      const fontsSrc = path.join(cfg.modRequest.projectRoot, 'assets/fonts');
+      if (fs.existsSync(fontsSrc)) {
+        for (const f of fs.readdirSync(fontsSrc)) {
+          if (f.endsWith('.ttf')) {
+            fs.copyFileSync(path.join(fontsSrc, f), path.join(fontsDest, f));
+          }
+        }
+      }
       return cfg;
     },
   ]);

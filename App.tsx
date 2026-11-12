@@ -8,6 +8,7 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
 } from '@expo-google-fonts/inter';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { CallScreen } from './src/screens/CallScreen';
 import { SplashAnimation } from './src/components/SplashAnimation';
@@ -20,6 +21,8 @@ export default function App() {
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
+    ...Ionicons.font,
+    ...MaterialCommunityIcons.font,
   });
 
   // Safety net: never stall on font loading if offline or font loader errors

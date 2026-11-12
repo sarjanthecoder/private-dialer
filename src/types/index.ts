@@ -26,6 +26,7 @@ export interface CallLogEntry {
   date: number;
   duration: number;
   simSlot: number | null;
+  isBlocked?: boolean;
 }
 
 export interface Contact {

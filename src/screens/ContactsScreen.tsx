@@ -49,15 +49,15 @@ interface FormModalProps {
   onSaved: () => void;
 }
 const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }: FormModalProps) {
-  const [name,   setName]   = useState(initial?.name   ?? '');
+  const [name, setName] = useState(initial?.name ?? '');
   const [number, setNumber] = useState(initial?.number ?? '');
   const [saving, setSaving] = useState(false);
-  const nameRef   = useRef<TextInput>(null);
+  const nameRef = useRef<TextInput>(null);
   const numberRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
-      setName(initial?.name   ?? '');
+      setName(initial?.name ?? '');
       setNumber(initial?.number ?? '');
       setSaving(false);
       // Focus name field after modal opens
@@ -71,8 +71,8 @@ const FormModal = memo(function FormModal({ visible, initial, onClose, onSaved }
   const handleSave = useCallback(async () => {
     const n = name.trim();
     const p = number.trim().replace(/\s/g, '');
-    if (!n)  { Alert.alert('Required', 'Enter a name');   return; }
-    if (!p)  { Alert.alert('Required', 'Enter a number'); return; }
+    if (!n) { Alert.alert('Required', 'Enter a name'); return; }
+    if (!p) { Alert.alert('Required', 'Enter a number'); return; }
     Keyboard.dismiss();
     setSaving(true);
     try {
@@ -167,8 +167,8 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
     );
   }, [item.number]);
 
-  const handlePressIn  = useCallback(() => { scale.value = withSpring(0.97, { damping: 20, stiffness: 400 }); }, [scale]);
-  const handlePressOut = useCallback(() => { scale.value = withSpring(1,    { damping: 20, stiffness: 400 }); }, [scale]);
+  const handlePressIn = useCallback(() => { scale.value = withSpring(0.97, { damping: 20, stiffness: 400 }); }, [scale]);
+  const handlePressOut = useCallback(() => { scale.value = withSpring(1, { damping: 20, stiffness: 400 }); }, [scale]);
 
   const rowStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -200,7 +200,7 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
         <Pressable
           onPress={() => {
             Alert.alert(item.name, item.number, [
-              { text: 'Edit',   onPress: () => onEdit(item) },
+              { text: 'Edit', onPress: () => onEdit(item) },
               { text: 'Delete', onPress: () => onDelete(item), style: 'destructive' },
               { text: 'Cancel', style: 'cancel' },
             ]);
@@ -219,9 +219,9 @@ const ContactRow = memo(function ContactRow({ item, onEdit, onDelete }: RowProps
 // ── Main ContactsScreen ───────────────────────────────────────────────────────
 export function ContactsScreen() {
   const { contacts, loading, error, refresh } = useContacts();
-  const [query,       setQuery]       = useState('');
-  const [showForm,    setShowForm]    = useState(false);
-  const [editTarget,  setEditTarget]  = useState<Contact | null>(null);
+  const [query, setQuery] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<Contact | null>(null);
   const fabScale = useSharedValue(1);
 
   const filtered = useMemo(() => {
@@ -235,7 +235,7 @@ export function ContactsScreen() {
     });
   }, [contacts, query]);
 
-  const openNew  = useCallback(() => { setEditTarget(null); setShowForm(true); }, []);
+  const openNew = useCallback(() => { setEditTarget(null); setShowForm(true); }, []);
   const openEdit = useCallback((c: Contact) => { setEditTarget(c); setShowForm(true); }, []);
   const closeForm = useCallback(() => setShowForm(false), []);
 
@@ -265,10 +265,10 @@ export function ContactsScreen() {
   ), [openEdit, handleDelete]);
 
   const keyExtractor = useCallback((item: Contact) => item.id + item.number, []);
-  const separator    = useCallback(() => <View style={styles.sep} />, []);
+  const separator = useCallback(() => <View style={styles.sep} />, []);
 
   const fabStyle = useAnimatedStyle(() => ({ transform: [{ scale: fabScale.value }] }));
-  const pressFABIn  = () => { fabScale.value = withTiming(0.92, { duration: 100 }); };
+  const pressFABIn = () => { fabScale.value = withTiming(0.92, { duration: 100 }); };
   const pressFABOut = () => { fabScale.value = withSpring(1, { damping: 15, stiffness: 300 }); };
 
   return (
@@ -374,41 +374,41 @@ export function ContactsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: colors.bg },
-  header:      { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 },
+  root: { flex: 1, backgroundColor: colors.bg },
+  header: { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 },
   headerTitle: { color: colors.text, fontFamily: fonts.semibold, fontSize: 24, flex: 1 },
   headerCount: { color: colors.textDim, fontFamily: fonts.medium, fontSize: 14 },
-  searchRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
   searchInput: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 15, padding: 0 },
-  list:        { paddingHorizontal: 16, paddingBottom: 100 },
-  row:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 13 },
-  rowText:     { flex: 1 },
-  rowName:     { color: colors.text, fontFamily: fonts.medium, fontSize: 15 },
-  rowSub:      { color: colors.textDim, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
-  callIcon:    { padding: 8 },
-  moreIcon:    { padding: 8 },
-  sep:         { height: 1, backgroundColor: colors.border, marginLeft: 59 },
-  center:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 36, paddingVertical: 60 },
-  hint:        { color: colors.textDim, fontFamily: fonts.regular, fontSize: 14, textAlign: 'center' },
-  retryBtn:    { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  retryText:   { color: colors.accent, fontFamily: fonts.medium, fontSize: 14 },
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 13 },
+  rowText: { flex: 1 },
+  rowName: { color: colors.text, fontFamily: fonts.medium, fontSize: 15 },
+  rowSub: { color: colors.textDim, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
+  callIcon: { padding: 8 },
+  moreIcon: { padding: 8 },
+  sep: { height: 1, backgroundColor: colors.border, marginLeft: 59 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 36, paddingVertical: 60 },
+  hint: { color: colors.textDim, fontFamily: fonts.regular, fontSize: 14, textAlign: 'center' },
+  retryBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  retryText: { color: colors.accent, fontFamily: fonts.medium, fontSize: 14 },
   // FAB
-  fab:         { position: 'absolute', bottom: 20, right: 20, borderRadius: 22, overflow: 'hidden', elevation: 10, shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 10 },
-  fabInner:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accent, paddingHorizontal: 20, paddingVertical: 14 },
-  fabLabel:    { color: '#fff', fontFamily: fonts.semibold, fontSize: 15 },
+  fab: { position: 'absolute', bottom: 20, right: 20, borderRadius: 22, overflow: 'hidden', elevation: 10, shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 10 },
+  fabInner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accent, paddingHorizontal: 20, paddingVertical: 14 },
+  fabLabel: { color: '#fff', fontFamily: fonts.semibold, fontSize: 15 },
   // Modal / sheet
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheetWrap:    { justifyContent: 'flex-end' },
-  sheet:        { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, borderTopWidth: 1, borderColor: colors.border },
-  handle:       { width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle:   { color: colors.text, fontFamily: fonts.semibold, fontSize: 20, marginBottom: 20 },
-  fieldGroup:   { gap: 0 },
-  field:        { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
-  fieldIcon:    { flexShrink: 0 },
-  fieldInput:   { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 16, padding: 0 },
+  sheetWrap: { justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, borderTopWidth: 1, borderColor: colors.border },
+  handle: { width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 },
+  sheetTitle: { color: colors.text, fontFamily: fonts.semibold, fontSize: 20, marginBottom: 20 },
+  fieldGroup: { gap: 0 },
+  field: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
+  fieldIcon: { flexShrink: 0 },
+  fieldInput: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 16, padding: 0 },
   sheetActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
-  cancelBtn:    { flex: 1, padding: 14, borderRadius: 14, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
-  cancelText:   { color: colors.textDim, fontFamily: fonts.medium, fontSize: 15 },
-  saveBtn:      { flex: 2, padding: 14, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  saveText:     { color: '#fff', fontFamily: fonts.semibold, fontSize: 15 },
+  cancelBtn: { flex: 1, padding: 14, borderRadius: 14, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  cancelText: { color: colors.textDim, fontFamily: fonts.medium, fontSize: 15 },
+  saveBtn: { flex: 2, padding: 14, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: '#fff', fontFamily: fonts.semibold, fontSize: 15 },
 });

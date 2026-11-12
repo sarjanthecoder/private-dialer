@@ -29,6 +29,10 @@ export interface DialerNative {
   hold(): void;
   unhold(): void;
   merge(): void;
+  deleteCallLog(id: string): Promise<boolean>;
+  blockNumber(number: string): Promise<boolean>;
+  unblockNumber(number: string): Promise<boolean>;
+  getBlockedNumbers(): Promise<string[]>;
 }
 
 const IDLE_CALL: CallInfo = {
@@ -68,6 +72,10 @@ const DialerStub: DialerNative = {
   hold:                 () => undefined,
   unhold:               () => undefined,
   merge:                () => undefined,
+  deleteCallLog:        () => Promise.resolve(false),
+  blockNumber:          () => Promise.resolve(false),
+  unblockNumber:        () => Promise.resolve(false),
+  getBlockedNumbers:    () => Promise.resolve([]),
 };
 
 const nativeMod = NativeModules.Dialer as (DialerNative & NativeModule) | undefined;

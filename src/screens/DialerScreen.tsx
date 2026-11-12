@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, AppState, Linking, Modal, Pressable,
-  StyleSheet, Text, View,
+  ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { Avatar } from '../components/Avatar';
 import { Keypad } from '../components/Keypad';
 import { RoundAction } from '../components/RoundAction';
 import { useContacts } from '../hooks/useContacts';
@@ -86,13 +87,28 @@ export function DialerScreen() {
 
   const { contacts } = useContacts();
 
-  // Find matching contact when digits are dialed
-  const matchedContact = useMemo(() => {
-    if (!digits || isPrivate) return null;
+  // Find matching contacts when digits are dialed (T9 name match + number match)
+  const matches = useMemo(() => {
+    if (!digits || isPrivate) return [];
     const clean = digits.replace(/\D/g, '');
-    if (clean.length < 2) return null;
-    return contacts.find((c) => c.number.replace(/\D/g, '').includes(clean));
+    if (!clean) return [];
+
+    const t9: Record<string, string> = {
+      '2': '[abc]', '3': '[def]', '4': '[ghi]', '5': '[jkl]',
+      '6': '[mno]', '7': '[pqrs]', '8': '[tuv]', '9': '[wxyz]'
+    };
+    const t9Pattern = clean.split('').map((d) => t9[d] || d).join('');
+    let t9Regex: RegExp | null = null;
+    try { t9Regex = new RegExp(t9Pattern, 'i'); } catch {}
+
+    return contacts.filter((c) => {
+      const numMatch = c.number.replace(/\D/g, '').includes(clean);
+      const nameMatch = t9Regex ? t9Regex.test(c.name) : false;
+      return numMatch || nameMatch;
+    }).slice(0, 6);
   }, [digits, isPrivate, contacts]);
+
+  const matchedContact = matches[0] ?? null;
 
   const fail = useCallback((e: unknown) =>
     Alert.alert('Call info', (e as Error)?.message ?? 'Unable to place call'), []);
@@ -189,14 +205,56 @@ export function DialerScreen() {
         )}
       </View>
 
+      {/* T9 / live matched contact cards above keypad */}
+      {matches.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.matchScroll}
+          contentContainerStyle={styles.matchScrollContent}
+        >
+          {matches.map((c) => (
+            <Pressable
+              key={c.id + c.number}
+              onPress={() => setDigits(c.number)}
+              style={styles.matchCard}
+              android_ripple={{ color: 'rgba(255,255,255,0.08)' }}
+            >
+              <Avatar size={34} photoUri={c.photoUri} name={c.name} />
+              <View style={styles.matchTextWrap}>
+                <Text style={styles.matchName} numberOfLines={1}>{c.name}</Text>
+                <Text style={styles.matchNumber} numberOfLines={1}>{c.number}</Text>
+              </View>
+              <Pressable
+                onPress={() => doCall(c.number, sims[0]?.id)}
+                style={styles.matchCallBtn}
+                hitSlop={10}
+              >
+                <Ionicons name="call" size={15} color={colors.green} />
+              </Pressable>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+
       <Keypad onPress={press} plusOnZeroLong />
 
       <View style={styles.bottom}>
         <View style={styles.side} />
         <RoundAction icon="call" size={72} bg={colors.green} iconColor="#04130A" onPress={call} />
-        <Pressable style={styles.side} onPress={backspace} onLongPress={clear} hitSlop={16}>
-          {digits.length > 0 && <Ionicons name="backspace-outline" size={28} color={colors.textDim} />}
-        </Pressable>
+        <View style={styles.side}>
+          {digits.length > 0 && (
+            <Pressable
+              style={styles.backspaceBtn}
+              onPress={backspace}
+              onLongPress={clear}
+              hitSlop={14}
+              android_ripple={{ color: 'rgba(255,255,255,0.1)', borderless: true }}
+            >
+              <Ionicons name="backspace-outline" size={26} color={colors.text} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <SimPicker
@@ -221,8 +279,18 @@ const styles = StyleSheet.create({
   digitsSub:     { color: colors.textDim, fontFamily: fonts.medium, fontSize: 18, marginTop: 4 },
   identity:      { color: colors.text, fontFamily: fonts.semibold, fontSize: 26 },
   hint:          { color: colors.accent, fontFamily: fonts.medium, fontSize: 11, marginTop: 3, letterSpacing: 1 },
+  // Match strip
+  matchScroll:   { width: '100%', maxHeight: 54, marginBottom: 8 },
+  matchScrollContent: { gap: 10, paddingHorizontal: 4 },
+  matchCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, gap: 10 },
+  matchTextWrap: { maxWidth: 130 },
+  matchName:     { color: colors.text, fontFamily: fonts.medium, fontSize: 13 },
+  matchNumber:   { color: colors.textDim, fontFamily: fonts.regular, fontSize: 11 },
+  matchCallBtn:  { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,255,100,0.1)', alignItems: 'center', justifyContent: 'center' },
+  // Bottom
   bottom:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: 78 * 3 + 44, marginTop: 16 },
   side:          { width: 78, height: 72, alignItems: 'center', justifyContent: 'center' },
+  backspaceBtn:  { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   // SIM picker modal
   simOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   simSheet:      { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32, borderTopWidth: 1, borderColor: colors.border },

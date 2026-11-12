@@ -4,14 +4,22 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.ContactsContract
+
 import android.telecom.Call
+
 import android.telecom.CallAudioState
+
 import android.telecom.InCallService
+
 import android.telecom.PhoneAccountHandle
+
 import android.telecom.VideoProfile
+
 import java.util.concurrent.CopyOnWriteArrayList
 
+
 data class CallSnapshot(
+    
     val state: String,
     val displayName: String,
     val isPrivate: Boolean,
@@ -48,8 +56,24 @@ internal object CallManager {
     fun addListener(l: (CallSnapshot) -> Unit) { listeners.add(l) }
     fun removeListener(l: (CallSnapshot) -> Unit) { listeners.remove(l) }
 
+    fun isNumberBlocked(context: android.content.Context, rawNumber: String?): Boolean {
+        if (rawNumber.isNullOrBlank()) return false
+        val clean = rawNumber.filter { it.isDigit() }.takeLast(10)
+        if (clean.isBlank()) return false
+        return try {
+            val prefs = context.getSharedPreferences("rootaccess_blocked_prefs", android.content.Context.MODE_PRIVATE)
+            val set = prefs.getStringSet("blocked_numbers", emptySet()) ?: emptySet()
+            set.any { it.takeLast(10) == clean }
+        } catch (e: Exception) { false }
+    }
+
     fun onCallAdded(call: Call, svc: InCallService) {
         service = svc
+        val number = call.details?.handle?.schemeSpecificPart
+        if (call.state == Call.STATE_RINGING && isNumberBlocked(svc, number)) {
+            call.reject(false, null)
+            return
+        }
         if (call.state == Call.STATE_RINGING) incomingCalls.add(call)
         calls.add(call)
         call.registerCallback(callback)

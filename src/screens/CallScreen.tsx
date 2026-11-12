@@ -148,32 +148,60 @@ export function CallScreen({ call }: { call: CallInfo }) {
           </View>
         ) : (
           <View style={styles.controls}>
-            {/* Row 1: Mute, Keypad, Speaker */}
+            {/* Grid Row 1: Mute, Keypad, Speaker */}
             <View style={styles.rowBetween}>
-              <RoundAction icon={call.muted   ? 'mic-off'    : 'mic'}
-                bg={call.muted   ? colors.text : colors.surfaceStrong}
-                iconColor={call.muted   ? '#000' : colors.text} label="Mute"    onPress={toggleMute} />
-              <RoundAction icon="keypad"
+              <RoundAction
+                icon={call.muted ? 'mic-off' : 'mic'}
+                bg={call.muted ? colors.text : colors.surfaceStrong}
+                iconColor={call.muted ? '#000' : colors.text}
+                label="Mute"
+                onPress={toggleMute}
+              />
+              <RoundAction
+                icon="keypad"
                 bg={showPad ? colors.text : colors.surfaceStrong}
-                iconColor={showPad ? '#000' : colors.text}       label="Keypad"  onPress={togglePad} />
-              <RoundAction icon="volume-high"
+                iconColor={showPad ? '#000' : colors.text}
+                label="Keypad"
+                onPress={togglePad}
+              />
+              <RoundAction
+                icon={call.speaker ? 'volume-high' : 'volume-medium'}
                 bg={call.speaker ? colors.text : colors.surfaceStrong}
-                iconColor={call.speaker ? '#000' : colors.text} label="Speaker" onPress={toggleSpeaker} />
+                iconColor={call.speaker ? '#000' : colors.text}
+                label="Speaker"
+                onPress={toggleSpeaker}
+              />
             </View>
-            {/* Row 2: Hold, End, Merge */}
+
+            {/* Grid Row 2: Hold, Merge, Add call */}
             <View style={styles.rowBetween}>
-              {isActive ? (
-                <RoundAction icon={onHold ? 'play' : 'pause'}
-                  bg={onHold ? colors.accent : colors.surfaceStrong}
-                  iconColor={onHold ? '#000' : colors.text}
-                  label={onHold ? 'Resume' : 'Hold'} onPress={toggleHold} />
-              ) : <View style={styles.placeholder} />}
+              <RoundAction
+                icon={onHold ? 'play' : 'pause'}
+                bg={onHold ? colors.accent : colors.surfaceStrong}
+                iconColor={onHold ? '#000' : colors.text}
+                label={onHold ? 'Resume' : 'Hold'}
+                onPress={toggleHold}
+              />
+              <RoundAction
+                icon="git-merge"
+                bg={call.canMerge ? colors.accent : colors.surfaceStrong}
+                iconColor={call.canMerge ? '#000' : colors.text}
+                disabled={!call.canMerge}
+                label="Merge"
+                onPress={merge}
+              />
+              <RoundAction
+                icon="person-add"
+                bg={colors.surfaceStrong}
+                iconColor={colors.text}
+                label="Add call"
+                onPress={togglePad}
+              />
+            </View>
 
+            {/* Bottom: Centered Big Red End Call */}
+            <View style={styles.hangupWrap}>
               <RoundAction icon="call" size={78} bg={colors.red} iconColor="#fff" rotate={135} onPress={hangup} />
-
-              {call.canMerge ? (
-                <RoundAction icon="git-merge" bg={colors.surfaceStrong} iconColor={colors.text} label="Merge" onPress={merge} />
-              ) : <View style={styles.placeholder} />}
             </View>
           </View>
         )}
@@ -197,5 +225,6 @@ const styles = StyleSheet.create({
   typed:        { color: colors.text, fontFamily: fonts.medium, fontSize: 24, minHeight: 32 },
   controls:     { alignItems: 'center', gap: 28 },
   rowBetween:   { flexDirection: 'row', justifyContent: 'space-around', alignSelf: 'stretch', alignItems: 'center' },
+  hangupWrap:   { marginTop: 12, alignItems: 'center' },
   placeholder:  { width: 64, height: 64 },
 });

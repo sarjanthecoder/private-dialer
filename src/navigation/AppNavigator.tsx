@@ -13,13 +13,23 @@ export function AppNavigator() {
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.body}>
-        {tab === 'dialer'   && <DialerScreen />}
-        {tab === 'contacts' && <ContactsScreen />}
-        {tab === 'history'  && <HistoryScreen />}
+        <View style={[styles.page, { display: tab === 'dialer' ? 'flex' : 'none' }]}>
+          <DialerScreen />
+        </View>
+        <View style={[styles.page, { display: tab === 'contacts' ? 'flex' : 'none' }]}>
+          <ContactsScreen />
+        </View>
+        <View style={[styles.page, { display: tab === 'history' ? 'flex' : 'none' }]}>
+          <HistoryScreen />
+        </View>
       </View>
       <TabBar active={tab} onChange={setTab} />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: colors.bg }, body: { flex: 1 } });
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  body: { flex: 1, position: 'relative' },
+  page: { ...StyleSheet.absoluteFillObject },
+});
